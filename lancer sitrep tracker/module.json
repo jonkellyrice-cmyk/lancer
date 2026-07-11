@@ -2,7 +2,7 @@
   "id": "lancer-sitrep-tracker",
   "title": "Lancer Sitrep Tracker",
   "description": "A public tactical HUD and automated objective tracker for Lancer sitreps. Version 1 includes the Gauntlet sitrep using Foundry Scene Regions.",
-  "version": "1.2.2",
+  "version": "1.2.4",
 
   "authors": [
     {
