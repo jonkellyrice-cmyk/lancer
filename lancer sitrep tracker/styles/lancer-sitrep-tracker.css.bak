@@ -3,68 +3,428 @@
   --lst-blue: #1598d1;
   --lst-red: #ff4655;
   --lst-gold: #ffc857;
+
   position: fixed;
   top: 80px;
-  right: 320px;
+
+  /*
+   * Fallback position only.
+   * The JavaScript calculates the actual position and places
+   * the HUD safely to the left of the Foundry sidebar.
+   */
+  left: calc(100vw - 700px);
+  right: auto;
+
   z-index: 70;
   width: 340px;
+  min-width: 230px;
+
   color: #f6fbff;
-  background: linear-gradient(145deg, rgba(5, 18, 28, 0.96), rgba(3, 8, 14, 0.96));
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(5, 18, 28, 0.96),
+      rgba(3, 8, 14, 0.96)
+    );
+
   border: 1px solid rgba(86, 228, 255, 0.65);
   border-left: 5px solid var(--lst-cyan);
-  box-shadow: 0 0 22px rgba(0, 0, 0, 0.65), 0 0 14px rgba(86, 228, 255, 0.2);
-  font-family: "Roboto Condensed", "Arial Narrow", sans-serif;
+
+  box-shadow:
+    0 0 22px rgba(0, 0, 0, 0.65),
+    0 0 14px rgba(86, 228, 255, 0.2);
+
+  font-family:
+    "Roboto Condensed",
+    "Arial Narrow",
+    sans-serif;
+
   letter-spacing: 0.03em;
   user-select: none;
 }
+
+/* ==========================================================
+   Header and dragging
+   ========================================================== */
 
 #lancer-sitrep-hud .lst-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
+
   padding: 12px 14px 8px;
-  border-bottom: 1px solid rgba(86, 228, 255, 0.35);
+
+  border-bottom:
+    1px solid rgba(86, 228, 255, 0.35);
+
+  cursor: grab;
+  touch-action: none;
 }
 
-#lancer-sitrep-hud .lst-kicker { font-size: 10px; color: var(--lst-cyan); letter-spacing: 0.25em; }
-#lancer-sitrep-hud h2 { margin: 2px 0 0; font-size: 23px; color: white; }
-#lancer-sitrep-hud button { cursor: pointer; }
-#lancer-sitrep-hud .lst-header button { width: 28px; height: 28px; border: 0; color: var(--lst-cyan); background: transparent; }
-#lancer-sitrep-hud .lst-objective { padding: 10px 14px; font-size: 12px; line-height: 1.35; color: #d5e4ed; }
-#lancer-sitrep-hud .lst-clock { padding: 8px 14px 12px; background: rgba(21, 152, 209, 0.1); }
-#lancer-sitrep-hud .lst-clock-row { display: flex; justify-content: space-between; align-items: baseline; }
-#lancer-sitrep-hud .lst-clock-row strong { color: var(--lst-cyan); font-size: 16px; }
-#lancer-sitrep-hud .lst-clock-row span { color: #9ab5c4; font-size: 10px; }
-#lancer-sitrep-hud .lst-pips { display: flex; gap: 4px; margin-top: 7px; }
-#lancer-sitrep-hud .lst-pip { flex: 1; height: 6px; background: rgba(255,255,255,0.12); transform: skewX(-20deg); }
-#lancer-sitrep-hud .lst-pip.filled { background: var(--lst-cyan); box-shadow: 0 0 5px rgba(86, 228, 255, 0.65); }
-#lancer-sitrep-hud .lst-zone-name { padding: 10px 14px 5px; font-size: 12px; color: #b5c8d2; }
-#lancer-sitrep-hud .lst-control-banner { margin: 4px 14px 9px; padding: 6px; text-align: center; font-weight: 800; border: 1px solid currentColor; color: var(--lst-gold); }
-#lancer-sitrep-hud.lst-control-friendly .lst-control-banner { color: var(--lst-cyan); }
-#lancer-sitrep-hud.lst-control-hostile .lst-control-banner { color: var(--lst-red); }
-#lancer-sitrep-hud .lst-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid rgba(255,255,255,0.08); }
-#lancer-sitrep-hud .lst-stat { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-right: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); }
-#lancer-sitrep-hud .lst-stat span { font-size: 9px; color: #93a8b5; }
-#lancer-sitrep-hud .lst-stat strong { font-size: 20px; }
-#lancer-sitrep-hud .lst-stat.allied strong { color: var(--lst-cyan); }
-#lancer-sitrep-hud .lst-stat.hostile strong { color: var(--lst-red); }
-#lancer-sitrep-hud .lst-result-reason, #lancer-sitrep-hud .lst-error { margin: 10px 14px; padding: 8px; font-size: 11px; line-height: 1.35; background: rgba(255,255,255,0.06); }
-#lancer-sitrep-hud.lst-victory { border-color: var(--lst-cyan); }
-#lancer-sitrep-hud.lst-defeat { border-color: var(--lst-red); border-left-color: var(--lst-red); }
-#lancer-sitrep-hud.lst-defeat .lst-clock-row strong { color: var(--lst-red); }
-#lancer-sitrep-hud.lst-paused { opacity: 0.72; }
-#lancer-sitrep-hud .lst-gm-controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 8px; }
-#lancer-sitrep-hud .lst-gm-controls button { border: 1px solid rgba(86,228,255,0.35); background: rgba(86,228,255,0.08); color: #eafaff; font-size: 10px; padding: 5px 2px; }
+#lancer-sitrep-hud.lst-dragging {
+  opacity: 0.94;
 
-.lst-open-button { margin: 4px !important; width: calc(100% - 8px); }
-.lst-setup-form fieldset { margin: 10px 0; padding: 8px 12px; }
-.lst-setup-form .checkbox { display: block; margin: 7px 0; }
-.lst-setup-form textarea { resize: vertical; }
-.lst-chat-result { padding: 12px; text-align: center; border: 2px solid #56e4ff; background: rgba(5,18,28,0.9); }
-.lst-chat-result.victory strong { color: #56e4ff; font-size: 18px; }
-.lst-chat-result.defeat { border-color: #ff4655; }
-.lst-chat-result.defeat strong { color: #ff4655; font-size: 18px; }
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.8),
+    0 0 18px rgba(86, 228, 255, 0.4);
+}
+
+#lancer-sitrep-hud.lst-dragging .lst-header {
+  cursor: grabbing;
+}
+
+#lancer-sitrep-hud .lst-header-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#lancer-sitrep-hud .lst-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+#lancer-sitrep-hud .lst-kicker {
+  font-size: 10px;
+  color: var(--lst-cyan);
+  letter-spacing: 0.25em;
+}
+
+#lancer-sitrep-hud h2 {
+  overflow: hidden;
+
+  margin: 2px 0 0;
+
+  color: white;
+  font-size: 23px;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#lancer-sitrep-hud button {
+  cursor: pointer;
+}
+
+#lancer-sitrep-hud .lst-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+
+  border: 0;
+
+  color: var(--lst-cyan);
+  background: transparent;
+}
+
+#lancer-sitrep-hud .lst-header button:hover,
+#lancer-sitrep-hud .lst-header button:focus-visible {
+  color: white;
+  background: rgba(86, 228, 255, 0.16);
+  box-shadow: 0 0 6px rgba(86, 228, 255, 0.35);
+}
+
+/* ==========================================================
+   HUD body
+   ========================================================== */
+
+#lancer-sitrep-hud .lst-hud-body {
+  display: block;
+}
+
+#lancer-sitrep-hud .lst-objective {
+  padding: 10px 14px;
+
+  color: #d5e4ed;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+#lancer-sitrep-hud .lst-clock {
+  padding: 8px 14px 12px;
+  background: rgba(21, 152, 209, 0.1);
+}
+
+#lancer-sitrep-hud .lst-clock-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#lancer-sitrep-hud .lst-clock-row strong {
+  color: var(--lst-cyan);
+  font-size: 16px;
+}
+
+#lancer-sitrep-hud .lst-clock-row span {
+  flex: 0 0 auto;
+
+  color: #9ab5c4;
+  font-size: 10px;
+}
+
+#lancer-sitrep-hud .lst-pips {
+  display: flex;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+#lancer-sitrep-hud .lst-pip {
+  flex: 1;
+  height: 6px;
+
+  background: rgba(255, 255, 255, 0.12);
+
+  transform: skewX(-20deg);
+}
+
+#lancer-sitrep-hud .lst-pip.filled {
+  background: var(--lst-cyan);
+  box-shadow: 0 0 5px rgba(86, 228, 255, 0.65);
+}
+
+#lancer-sitrep-hud .lst-zone-name {
+  padding: 10px 14px 5px;
+
+  color: #b5c8d2;
+  font-size: 12px;
+}
+
+#lancer-sitrep-hud .lst-zone-name i {
+  margin-right: 5px;
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-control-banner {
+  margin: 4px 14px 9px;
+  padding: 6px;
+
+  border: 1px solid currentColor;
+
+  color: var(--lst-gold);
+  font-weight: 800;
+  text-align: center;
+}
+
+#lancer-sitrep-hud.lst-control-friendly .lst-control-banner {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud.lst-control-hostile .lst-control-banner {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  border-top:
+    1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+
+  padding: 9px 12px;
+
+  border-right:
+    1px solid rgba(255, 255, 255, 0.08);
+
+  border-bottom:
+    1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-stat span {
+  color: #93a8b5;
+  font-size: 9px;
+}
+
+#lancer-sitrep-hud .lst-stat strong {
+  font-size: 20px;
+}
+
+#lancer-sitrep-hud .lst-stat.allied strong {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-stat.hostile strong {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-result-reason,
+#lancer-sitrep-hud .lst-error {
+  margin: 10px 14px;
+  padding: 8px;
+
+  font-size: 11px;
+  line-height: 1.35;
+
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ==========================================================
+   Mission states
+   ========================================================== */
+
+#lancer-sitrep-hud.lst-victory {
+  border-color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud.lst-defeat {
+  border-color: var(--lst-red);
+  border-left-color: var(--lst-red);
+}
+
+#lancer-sitrep-hud.lst-defeat .lst-clock-row strong {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud.lst-paused {
+  opacity: 0.72;
+}
+
+/* ==========================================================
+   GM controls
+   ========================================================== */
+
+#lancer-sitrep-hud .lst-controls {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+
+  padding: 8px;
+}
+
+#lancer-sitrep-hud .lst-controls button {
+  min-width: 0;
+  padding: 5px 2px;
+
+  border:
+    1px solid rgba(86, 228, 255, 0.35);
+
+  color: #eafaff;
+  font-size: 10px;
+
+  background: rgba(86, 228, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-controls button:hover,
+#lancer-sitrep-hud .lst-controls button:focus-visible {
+  background: rgba(86, 228, 255, 0.2);
+  border-color: var(--lst-cyan);
+}
+
+/* ==========================================================
+   Minimized state
+   ========================================================== */
+
+#lancer-sitrep-hud.lst-minimized {
+  width: 230px;
+  min-width: 230px;
+  min-height: 0;
+}
+
+#lancer-sitrep-hud.lst-minimized .lst-header {
+  align-items: center;
+
+  padding: 8px 10px;
+
+  border-bottom: 0;
+}
+
+#lancer-sitrep-hud.lst-minimized .lst-kicker {
+  font-size: 8px;
+}
+
+#lancer-sitrep-hud.lst-minimized h2 {
+  max-width: 135px;
+  margin-top: 0;
+
+  font-size: 15px;
+}
+
+#lancer-sitrep-hud.lst-minimized .lst-hud-body {
+  display: none !important;
+}
+
+/* ==========================================================
+   Combat Tracker and setup dialog
+   ========================================================== */
+
+.lst-open-button {
+  width: calc(100% - 8px);
+  margin: 4px !important;
+}
+
+.lst-setup-form fieldset {
+  margin: 10px 0;
+  padding: 8px 12px;
+}
+
+.lst-setup-form .checkbox {
+  display: block;
+  margin: 7px 0;
+}
+
+.lst-setup-form textarea {
+  resize: vertical;
+}
+
+/* ==========================================================
+   Chat result cards
+   ========================================================== */
+
+.lst-chat-result {
+  padding: 12px;
+
+  border: 2px solid #56e4ff;
+
+  text-align: center;
+
+  background: rgba(5, 18, 28, 0.9);
+}
+
+.lst-chat-result.victory strong {
+  color: #56e4ff;
+  font-size: 18px;
+}
+
+.lst-chat-result.defeat {
+  border-color: #ff4655;
+}
+
+.lst-chat-result.defeat strong {
+  color: #ff4655;
+  font-size: 18px;
+}
+
+/* ==========================================================
+   Smaller screens
+   ========================================================== */
 
 @media (max-width: 1100px) {
-  #lancer-sitrep-hud { right: 10px; top: 70px; width: 310px; }
+  #lancer-sitrep-hud {
+    top: 70px;
+    left: 10px;
+    right: auto;
+
+    width: 310px;
+  }
+
+  #lancer-sitrep-hud.lst-minimized {
+    width: 230px;
+  }
 }

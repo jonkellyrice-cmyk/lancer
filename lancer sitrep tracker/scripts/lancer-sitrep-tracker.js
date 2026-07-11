@@ -9,6 +9,12 @@ const DEFAULTS = {
   objective:
     "Have more allied units than hostile units in the control zone at the end of the final round.",
   regionId: "",
+  controlRegionIds: [],
+  scores: {
+    friendly: 0,
+    hostile: 0
+  },
+  scoredRounds: [],
   startRound: 1,
   roundLimit: 8,
   finalRound: 8,
@@ -100,6 +106,23 @@ function regionFor(combat, sitrep) {
   return scene?.regions?.get(sitrep?.regionId) ?? null;
 }
 
+function controlRegionsFor(combat, sitrep) {
+  const scene = combat?.scene ?? canvas.scene;
+  const ids = Array.isArray(sitrep?.controlRegionIds)
+    ? sitrep.controlRegionIds
+    : [];
+
+  return ids
+    .map(id => scene?.regions?.get(id) ?? null)
+    .filter(Boolean);
+}
+
+function controllerFromCounts(friendly, hostile) {
+  if (friendly > hostile) return "friendly";
+  if (hostile > friendly) return "hostile";
+  return "contested";
+}
+
 function tokenInsideRegion(tokenDocument, region) {
   if (!tokenDocument || !region) return false;
 
@@ -132,69 +155,106 @@ function calculateState(
     controller: "none",
     regionName: "Missing Region",
     immediateVictory: false,
-    immediateReason: ""
+    immediateReason: "",
+    controlZones: [],
+    friendlyZones: 0,
+    hostileZones: 0,
+    friendlyScore: Number(sitrep?.scores?.friendly ?? 0),
+    hostileScore: Number(sitrep?.scores?.hostile ?? 0)
   };
 
   if (!combat || !sitrep) return empty;
-
-  const region = regionFor(combat, sitrep);
-
-  if (!region) return empty;
-
-  const state = {
-    ...empty,
-    valid: true,
-    regionName: region.name || "Control Zone"
-  };
-
-  for (const combatant of combat.combatants ?? []) {
-    if (combatantIsDefeated(combatant)) continue;
-
-    const token = combatant.token;
-
-    if (!token) continue;
-
-    const faction = factionOf(token);
-
-    if (faction === "neutral") continue;
-
-    const inside = tokenInsideRegion(token, region);
-
-    if (faction === "friendly") {
-      state.friendlyStanding += 1;
-
-      if (inside) {
-        state.friendlyInZone += 1;
-      }
-    } else {
-      state.hostileStanding += 1;
-
-      if (inside) {
-        state.hostileInZone += 1;
-      }
-    }
-  }
-
-  if (state.friendlyInZone > state.hostileInZone) {
-    state.controller = "friendly";
-  } else if (
-    state.hostileInZone > state.friendlyInZone
-  ) {
-    state.controller = "hostile";
-  } else {
-    state.controller = "contested";
-  }
 
   const currentRound = Math.max(
     Number(combat.round ?? sitrep.startRound ?? 1),
     1
   );
 
-  state.currentRound = currentRound;
+  const state = {
+    ...empty,
+    currentRound,
+    roundsRemaining: Math.max(
+      Number(sitrep.finalRound) - currentRound + 1,
+      0
+    )
+  };
 
-  state.roundsRemaining = Math.max(
-    Number(sitrep.finalRound) - currentRound + 1,
-    0
+  const standingCombatants = [];
+
+  for (const combatant of combat.combatants ?? []) {
+    if (combatantIsDefeated(combatant)) continue;
+
+    const token = combatant.token;
+    if (!token) continue;
+
+    const faction = factionOf(token);
+    if (faction === "neutral") continue;
+
+    standingCombatants.push({ token, faction });
+
+    if (faction === "friendly") {
+      state.friendlyStanding += 1;
+    } else {
+      state.hostileStanding += 1;
+    }
+  }
+
+  if (sitrep.type === "control") {
+    const regions = controlRegionsFor(combat, sitrep);
+    state.valid = regions.length === 4;
+
+    state.controlZones = regions.map((region, index) => {
+      let friendly = 0;
+      let hostile = 0;
+
+      for (const entry of standingCombatants) {
+        if (!tokenInsideRegion(entry.token, region)) continue;
+
+        if (entry.faction === "friendly") friendly += 1;
+        if (entry.faction === "hostile") hostile += 1;
+      }
+
+      const controller = controllerFromCounts(friendly, hostile);
+
+      if (controller === "friendly") state.friendlyZones += 1;
+      if (controller === "hostile") state.hostileZones += 1;
+
+      return {
+        id: region.id,
+        name: region.name || `Objective ${String.fromCharCode(65 + index)}`,
+        friendly,
+        hostile,
+        controller
+      };
+    });
+
+    state.controller = controllerFromCounts(
+      state.friendlyZones,
+      state.hostileZones
+    );
+
+    return state;
+  }
+
+  const region = regionFor(combat, sitrep);
+  if (!region) return state;
+
+  state.valid = true;
+  state.regionName = region.name || "Control Zone";
+
+  for (const entry of standingCombatants) {
+    if (!tokenInsideRegion(entry.token, region)) continue;
+
+    if (entry.faction === "friendly") {
+      state.friendlyInZone += 1;
+    } else {
+      state.hostileInZone += 1;
+    }
+  }
+
+  state.controller = controllerFromCounts(
+    state.friendlyInZone,
+    state.hostileInZone
   );
 
   if (
@@ -248,6 +308,60 @@ function controlLabel(controller) {
   }
 
   return "CONTESTED";
+}
+
+function controlZoneLabel(controller) {
+  if (controller === "friendly") return "ALLIED";
+  if (controller === "hostile") return "HOSTILE";
+  return "CONTESTED";
+}
+
+function renderControlState(sitrep, state) {
+  const zones = state.controlZones
+    .map(
+      (zone, index) => `
+        <div class="lst-control-zone lst-zone-${esc(zone.controller)}">
+          <div class="lst-control-zone-name">
+            OBJECTIVE ${String.fromCharCode(65 + index)}
+          </div>
+
+          <strong>${esc(zone.name)}</strong>
+
+          <div class="lst-control-zone-status">
+            ${controlZoneLabel(zone.controller)}
+          </div>
+
+          <div class="lst-control-zone-counts">
+            <span class="allied">${zone.friendly} ALLIED</span>
+            <span class="hostile">${zone.hostile} HOSTILE</span>
+          </div>
+        </div>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="lst-control-scoreboard">
+      <div class="lst-control-score allied">
+        <span>ALLIED SCORE</span>
+        <strong>${state.friendlyScore}</strong>
+      </div>
+
+      <div class="lst-control-score hostile">
+        <span>HOSTILE SCORE</span>
+        <strong>${state.hostileScore}</strong>
+      </div>
+    </div>
+
+    <div class="lst-control-round-zones">
+      <span>ALLIED ZONES: ${state.friendlyZones}</span>
+      <span>HOSTILE ZONES: ${state.hostileZones}</span>
+    </div>
+
+    <div class="lst-control-zone-grid">
+      ${zones}
+    </div>
+  `;
 }
 
 /* ==========================================================
@@ -675,42 +789,47 @@ function renderHUD() {
 
       ${
         state.valid
-          ? `
-            <div class="lst-zone-name">
-              <i class="fas fa-bullseye"></i>
-              ${esc(state.regionName)}
-            </div>
-
-            <div class="lst-control-banner">
-              ${controlLabel(state.controller)}
-            </div>
-
-            <div class="lst-grid">
-              <div class="lst-stat allied">
-                <span>ALLIES IN ZONE</span>
-                <strong>${state.friendlyInZone}</strong>
+          ? sitrep.type === "control"
+            ? renderControlState(sitrep, state)
+            : `
+              <div class="lst-zone-name">
+                <i class="fas fa-bullseye"></i>
+                ${esc(state.regionName)}
               </div>
 
-              <div class="lst-stat hostile">
-                <span>HOSTILES IN ZONE</span>
-                <strong>${state.hostileInZone}</strong>
+              <div class="lst-control-banner">
+                ${controlLabel(state.controller)}
               </div>
 
-              <div class="lst-stat allied">
-                <span>ALLIES STANDING</span>
-                <strong>${state.friendlyStanding}</strong>
-              </div>
+              <div class="lst-grid">
+                <div class="lst-stat allied">
+                  <span>ALLIES IN ZONE</span>
+                  <strong>${state.friendlyInZone}</strong>
+                </div>
 
-              <div class="lst-stat hostile">
-                <span>HOSTILES STANDING</span>
-                <strong>${state.hostileStanding}</strong>
+                <div class="lst-stat hostile">
+                  <span>HOSTILES IN ZONE</span>
+                  <strong>${state.hostileInZone}</strong>
+                </div>
+
+                <div class="lst-stat allied">
+                  <span>ALLIES STANDING</span>
+                  <strong>${state.friendlyStanding}</strong>
+                </div>
+
+                <div class="lst-stat hostile">
+                  <span>HOSTILES STANDING</span>
+                  <strong>${state.hostileStanding}</strong>
+                </div>
               </div>
-            </div>
-          `
+            `
           : `
             <div class="lst-error">
-              The configured Region cannot be found on
-              this combat's Scene.
+              ${
+                sitrep.type === "control"
+                  ? "Control requires exactly four valid Scene Regions."
+                  : "The configured Region cannot be found on this combat's Scene."
+              }
             </div>
           `
       }
@@ -878,7 +997,7 @@ async function evaluateSitrep(
   combat,
   changes = {}
 ) {
-  const sitrep = getSitrep(combat);
+  let sitrep = getSitrep(combat);
 
   if (
     !sitrep?.active ||
@@ -888,61 +1007,130 @@ async function evaluateSitrep(
     return;
   }
 
-  const state = calculateState(
-    combat,
-    sitrep
-  );
-
+  let state = calculateState(combat, sitrep);
   if (!state.valid) return;
 
-  if (state.immediateVictory) {
-    await setResult(
-      "victory",
-      state.immediateReason
-    );
+  const roundChanged = Object.prototype.hasOwnProperty.call(
+    changes,
+    "round"
+  );
+
+  if (sitrep.type === "control") {
+    if (!roundChanged) return;
+
+    const completedRound = Number(changes.round) - 1;
+    const scoredRounds = Array.isArray(sitrep.scoredRounds)
+      ? [...sitrep.scoredRounds]
+      : [];
+
+    if (
+      completedRound >= Number(sitrep.startRound) &&
+      completedRound <= Number(sitrep.finalRound) &&
+      !scoredRounds.includes(completedRound)
+    ) {
+      let friendlyRoundPoints = state.friendlyZones;
+      let hostileRoundPoints = state.hostileZones;
+
+      if (state.friendlyZones === 4) friendlyRoundPoints += 1;
+      if (state.hostileZones === 4) hostileRoundPoints += 1;
+
+      scoredRounds.push(completedRound);
+
+      sitrep = {
+        ...sitrep,
+        scores: {
+          friendly:
+            Number(sitrep.scores?.friendly ?? 0) +
+            friendlyRoundPoints,
+          hostile:
+            Number(sitrep.scores?.hostile ?? 0) +
+            hostileRoundPoints
+        },
+        scoredRounds
+      };
+
+      await combat.setFlag(MODULE_ID, FLAG_KEY, sitrep);
+      state = calculateState(combat, sitrep);
+
+      await ChatMessage.create({
+        speaker: { alias: "MISSION CONTROL" },
+        content: `
+          <div class="lst-chat-result">
+            <strong>CONTROL — ROUND ${completedRound} SCORED</strong>
+            <br>
+            Allies +${friendlyRoundPoints} | Hostiles +${hostileRoundPoints}
+            <br>
+            Total: Allies ${sitrep.scores.friendly} — Hostiles ${sitrep.scores.hostile}
+          </div>
+        `
+      });
+    }
+
+    if (Number(changes.round) > Number(sitrep.finalRound)) {
+      const friendlyScore = Number(sitrep.scores?.friendly ?? 0);
+      const hostileScore = Number(sitrep.scores?.hostile ?? 0);
+
+      if (friendlyScore > hostileScore) {
+        await setResult(
+          "victory",
+          `The allies won Control ${friendlyScore} to ${hostileScore}.`
+        );
+      } else if (hostileScore > friendlyScore) {
+        await setResult(
+          "defeat",
+          `The hostiles won Control ${hostileScore} to ${friendlyScore}.`
+        );
+      } else {
+        await combat.setFlag(MODULE_ID, FLAG_KEY, {
+          ...sitrep,
+          status: "draw",
+          resultReason:
+            `Control ended in a ${friendlyScore} to ${hostileScore} draw. Neither side achieved victory.`
+        });
+
+        await ChatMessage.create({
+          speaker: { alias: "MISSION CONTROL" },
+          content: `
+            <div class="lst-chat-result">
+              <strong>NO VICTOR</strong>
+              <br>
+              Control ended in a ${friendlyScore} to ${hostileScore} draw.
+            </div>
+          `
+        });
+      }
+    }
 
     return;
   }
 
-  const roundChanged =
-    Object.prototype.hasOwnProperty.call(
-      changes,
-      "round"
-    );
+  if (state.immediateVictory) {
+    await setResult("victory", state.immediateReason);
+    return;
+  }
 
-  const previousRound = Number(
-    combat.previous?.round ?? 0
-  );
+  const previousRound = Number(combat.previous?.round ?? 0);
 
   const advancedPastFinalRound =
     roundChanged &&
-    Number(combat.round) >
-      Number(sitrep.finalRound);
+    Number(combat.round) > Number(sitrep.finalRound);
 
   const fallbackPastFinalRound =
     roundChanged &&
-    previousRound ===
-      Number(sitrep.finalRound) &&
+    previousRound === Number(sitrep.finalRound) &&
     Number(combat.round) !== previousRound;
 
-  if (
-    advancedPastFinalRound ||
-    fallbackPastFinalRound
-  ) {
+  if (advancedPastFinalRound || fallbackPastFinalRound) {
     const won =
       sitrep.rules?.finalZoneControl &&
-      state.friendlyInZone >
-        state.hostileInZone &&
+      state.friendlyInZone > state.hostileInZone &&
       state.friendlyInZone > 0;
 
     const reason = won
       ? `At the end of round ${sitrep.finalRound}, allied units controlled the zone ${state.friendlyInZone} to ${state.hostileInZone}.`
       : `At the end of round ${sitrep.finalRound}, allied units did not control the zone (${state.friendlyInZone} allied, ${state.hostileInZone} hostile).`;
 
-    await setResult(
-      won ? "victory" : "defeat",
-      reason
-    );
+    await setResult(won ? "victory" : "defeat", reason);
   }
 }
 
@@ -1015,6 +1203,23 @@ function setupDialogHTML(
               ? "selected"
               : ""
           }
+        >
+          ${esc(region.name || region.id)}
+        </option>
+      `
+    )
+    .join("");
+
+  const selectedControlRegionIds = Array.isArray(existing?.controlRegionIds)
+    ? existing.controlRegionIds
+    : [];
+
+  const controlRegionOptions = regions
+    .map(
+      region => `
+        <option
+          value="${esc(region.id)}"
+          ${selectedControlRegionIds.includes(region.id) ? "selected" : ""}
         >
           ${esc(region.name || region.id)}
         </option>
@@ -1095,7 +1300,7 @@ function setupDialogHTML(
         )}</textarea>
       </div>
 
-      <div class="form-group">
+      <div class="form-group lst-single-region-group">
         <label>Control Region</label>
 
         <select name="regionId">
@@ -1105,6 +1310,19 @@ function setupDialogHTML(
 
           ${regionOptions}
         </select>
+      </div>
+
+      <div class="form-group lst-control-regions-group" style="display: none;">
+        <label>Control Zones</label>
+
+        <select name="controlRegionIds" multiple size="6">
+          ${controlRegionOptions}
+        </select>
+
+        <p class="notes">
+          Select exactly four Scene Regions. Hold Ctrl while clicking
+          to select multiple Regions.
+        </p>
       </div>
 
       <div class="form-group">
@@ -1196,11 +1414,27 @@ async function saveSetup(
   const formData =
     new FormData(form);
 
+  const sitrepType = String(
+    formData.get("sitrepType") || DEFAULTS.type
+  );
+
   const regionId = String(
     formData.get("regionId") ?? ""
   );
 
-  if (!regionId) {
+  const controlRegionIds = formData
+    .getAll("controlRegionIds")
+    .map(String);
+
+  if (sitrepType === "control") {
+    if (controlRegionIds.length !== 4) {
+      ui.notifications.error(
+        "Control requires exactly four selected Scene Regions."
+      );
+
+      return false;
+    }
+  } else if (!regionId) {
     ui.notifications.error(
       "Select a control Region."
     );
@@ -1210,7 +1444,8 @@ async function saveSetup(
 
   const roundLimit = Math.max(
     Number(
-      formData.get("roundLimit") ?? 8
+      formData.get("roundLimit") ??
+      (sitrepType === "control" ? 6 : 8)
     ),
     1
   );
@@ -1223,10 +1458,19 @@ async function saveSetup(
   const data = {
     ...DEFAULTS,
 
-    type: String(
-      formData.get("sitrepType") ||
-      DEFAULTS.type
-    ),
+    type: sitrepType,
+
+    controlRegionIds:
+      sitrepType === "control"
+        ? controlRegionIds
+        : [],
+
+    scores: {
+      friendly: 0,
+      hostile: 0
+    },
+
+    scoredRounds: [],
 
     title: String(
       formData.get("title") ||
@@ -1346,10 +1590,35 @@ function openSetupDialog() {
 
       default: "start",
 
-      render: html =>
-        html
-          .closest(".app")
-          .addClass("lst-dialog")
+      render: html => {
+        const root = html[0] ?? html;
+        const app = html.closest?.(".app");
+        app?.addClass?.("lst-dialog");
+
+        const typeSelect = root.querySelector('[name="sitrepType"]');
+        const roundLimitInput = root.querySelector('[name="roundLimit"]');
+        const singleRegionGroup = root.querySelector(".lst-single-region-group");
+        const controlRegionsGroup = root.querySelector(".lst-control-regions-group");
+
+        const updateSitrepFields = () => {
+          const isControl = typeSelect?.value === "control";
+
+          if (singleRegionGroup) {
+            singleRegionGroup.style.display = isControl ? "none" : "";
+          }
+
+          if (controlRegionsGroup) {
+            controlRegionsGroup.style.display = isControl ? "" : "none";
+          }
+
+          if (isControl && roundLimitInput && !existing) {
+            roundLimitInput.value = "6";
+          }
+        };
+
+        typeSelect?.addEventListener("change", updateSitrepFields);
+        updateSitrepFields();
+      }
     },
     {
       width: 520

@@ -428,3 +428,114 @@
     width: 230px;
   }
 }
+
+/* ==========================================================
+   Control Sitrep
+   ========================================================== */
+
+#lancer-sitrep-hud .lst-control-scoreboard {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-control-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+#lancer-sitrep-hud .lst-control-score:first-child {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-control-score span {
+  color: #93a8b5;
+  font-size: 9px;
+}
+
+#lancer-sitrep-hud .lst-control-score strong {
+  font-size: 25px;
+}
+
+#lancer-sitrep-hud .lst-control-score.allied strong {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-control-score.hostile strong {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-control-round-zones {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 12px;
+  color: #b5c8d2;
+  font-size: 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+#lancer-sitrep-hud .lst-control-zone-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+#lancer-sitrep-hud .lst-control-zone {
+  min-width: 0;
+  padding: 9px 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-control-zone-name {
+  color: #93a8b5;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+}
+
+#lancer-sitrep-hud .lst-control-zone > strong {
+  display: block;
+  overflow: hidden;
+  margin: 3px 0;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#lancer-sitrep-hud .lst-control-zone-status {
+  padding: 3px 4px;
+  border: 1px solid currentColor;
+  color: var(--lst-gold);
+  font-size: 9px;
+  font-weight: 800;
+  text-align: center;
+}
+
+#lancer-sitrep-hud .lst-zone-friendly .lst-control-zone-status {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-zone-hostile .lst-control-zone-status {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-control-zone-counts {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 8px;
+}
+
+#lancer-sitrep-hud .lst-control-zone-counts .allied {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-control-zone-counts .hostile {
+  color: var(--lst-red);
+}
+
+.lst-control-regions-group select[multiple] {
+  min-height: 145px;
+}
