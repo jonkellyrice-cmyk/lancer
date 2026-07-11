@@ -1,0 +1,40 @@
+{
+  "id": "lancer-sitrep-tracker",
+  "title": "Lancer Sitrep Tracker",
+  "description": "A public tactical HUD and automated objective tracker for Lancer sitreps. Version 1 includes the Gauntlet sitrep using Foundry Scene Regions.",
+  "version": "1.0.0",
+
+  "authors": [
+    {
+      "name": "Jon Rice & OpenAI"
+    }
+  ],
+
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13",
+    "maximum": "13"
+  },
+
+  "esmodules": [
+    "scripts/lancer-sitrep-tracker.js"
+  ],
+
+  "styles": [
+    "styles/lancer-sitrep-tracker.css"
+  ],
+
+  "relationships": {
+    "systems": [
+      {
+        "id": "lancer",
+        "type": "system",
+        "compatibility": {}
+      }
+    ]
+  },
+
+  "manifest": "https://raw.githubusercontent.com/jonkellyrice-cmyk/lancer/main/lancer%20sitrep%20tracker/module.json",
+
+  "download": "https://github.com/jonkellyrice-cmyk/lancer/archive/refs/heads/main.zip"
+}
