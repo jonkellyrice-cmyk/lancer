@@ -645,3 +645,110 @@
   cursor: default;
   opacity: 0.4;
 }
+
+/* ==========================================================
+   Extraction Sitrep
+   ========================================================== */
+
+#lancer-sitrep-hud .lst-extraction-objective {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px 7px;
+}
+
+#lancer-sitrep-hud .lst-extraction-objective span {
+  color: #93a8b5;
+  font-size: 9px;
+}
+
+#lancer-sitrep-hud .lst-extraction-objective strong {
+  overflow: hidden;
+  color: white;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#lancer-sitrep-hud .lst-extraction-status {
+  margin: 3px 14px 9px;
+  padding: 7px;
+  border: 1px solid currentColor;
+  color: var(--lst-gold);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+#lancer-sitrep-hud .lst-extraction-ready,
+#lancer-sitrep-hud .lst-extraction-extracted,
+#lancer-sitrep-hud .lst-extraction-secured {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-extraction-destroyed,
+#lancer-sitrep-hud .lst-extraction-contested {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-extraction-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-extraction-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-extraction-stat span {
+  color: #93a8b5;
+  font-size: 8px;
+}
+
+#lancer-sitrep-hud .lst-extraction-stat strong {
+  color: white;
+  font-size: 13px;
+}
+
+#lancer-sitrep-hud .lst-extraction-stat.allied strong {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-extraction-stat.hostile strong {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-extraction-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-extraction-controls button {
+  min-width: 0;
+  padding: 6px 4px;
+  border: 1px solid rgba(86, 228, 255, 0.35);
+  color: #eafaff;
+  font-size: 9px;
+  background: rgba(86, 228, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-extraction-controls button:last-child {
+  border-color: rgba(255, 70, 85, 0.5);
+  background: rgba(255, 70, 85, 0.08);
+}
+
+#lancer-sitrep-hud .lst-extraction-controls button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}

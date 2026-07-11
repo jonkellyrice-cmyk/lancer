@@ -539,3 +539,109 @@
 .lst-control-regions-group select[multiple] {
   min-height: 145px;
 }
+
+/* ==========================================================
+   Escort Sitrep
+   ========================================================== */
+
+#lancer-sitrep-hud .lst-escort-objective {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px 7px;
+}
+
+#lancer-sitrep-hud .lst-escort-objective span {
+  color: #93a8b5;
+  font-size: 9px;
+}
+
+#lancer-sitrep-hud .lst-escort-objective strong {
+  overflow: hidden;
+  color: white;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#lancer-sitrep-hud .lst-escort-status {
+  margin: 3px 14px 9px;
+  padding: 7px;
+  border: 1px solid currentColor;
+  color: var(--lst-gold);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+#lancer-sitrep-hud .lst-escort-ready,
+#lancer-sitrep-hud .lst-escort-extracted {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-escort-destroyed,
+#lancer-sitrep-hud .lst-escort-contested {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-escort-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-escort-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-escort-stat span {
+  color: #93a8b5;
+  font-size: 8px;
+}
+
+#lancer-sitrep-hud .lst-escort-stat strong {
+  color: white;
+  font-size: 13px;
+}
+
+#lancer-sitrep-hud .lst-escort-stat.allied strong {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-escort-stat.hostile strong {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-escort-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-escort-controls button {
+  min-width: 0;
+  padding: 6px 4px;
+  border: 1px solid rgba(86, 228, 255, 0.35);
+  color: #eafaff;
+  font-size: 9px;
+  background: rgba(86, 228, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-escort-controls button:last-child {
+  border-color: rgba(255, 70, 85, 0.5);
+  background: rgba(255, 70, 85, 0.08);
+}
+
+#lancer-sitrep-hud .lst-escort-controls button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}

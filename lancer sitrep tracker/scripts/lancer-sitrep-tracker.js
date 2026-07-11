@@ -13,6 +13,9 @@ const DEFAULTS = {
   escortObjectiveCombatantId: "",
   escortExtractionRegionId: "",
   escortStatus: "active",
+  extractionObjectiveCombatantId: "",
+  extractionZoneRegionId: "",
+  extractionStatus: "active",
   scores: {
     friendly: 0,
     hostile: 0
@@ -207,10 +210,13 @@ function calculateState(
     hostileScore: Number(sitrep?.scores?.hostile ?? 0),
     objectiveName: "Missing Objective",
     objectiveDestroyed: false,
-    objectiveExtracted: sitrep?.escortStatus === "extracted",
+    objectiveExtracted:
+      sitrep?.escortStatus === "extracted" ||
+      sitrep?.extractionStatus === "extracted",
     objectiveInExtraction: false,
     friendlyAdjacent: 0,
     hostileAdjacent: 0,
+    friendlyInExtractionZone: 0,
     canExtractObjective: false
   };
 
@@ -283,6 +289,79 @@ function calculateState(
       state.friendlyZones,
       state.hostileZones
     );
+
+    return state;
+  }
+
+  if (sitrep.type === "extraction") {
+    const scene = combat?.scene ?? canvas.scene;
+
+    const extractionRegion = scene?.regions?.get(
+      sitrep.extractionZoneRegionId
+    ) ?? null;
+
+    const objectiveCombatant = combatantById(
+      combat,
+      sitrep.extractionObjectiveCombatantId
+    );
+
+    const objectiveToken = objectiveCombatant?.token ?? null;
+
+    state.valid = Boolean(
+      extractionRegion &&
+      objectiveCombatant &&
+      objectiveToken
+    );
+
+    if (!state.valid) return state;
+
+    state.objectiveName =
+      objectiveCombatant.name ||
+      objectiveToken.name ||
+      "Objective";
+
+    state.objectiveDestroyed =
+      sitrep.extractionStatus === "destroyed" ||
+      combatantIsDefeated(objectiveCombatant);
+
+    state.objectiveExtracted =
+      sitrep.extractionStatus === "extracted";
+
+    state.objectiveInExtraction =
+      !state.objectiveDestroyed &&
+      !state.objectiveExtracted &&
+      tokenInsideRegion(
+        objectiveToken,
+        extractionRegion
+      );
+
+    for (const entry of standingCombatants) {
+      if (entry.token.id === objectiveToken.id) continue;
+
+      if (
+        entry.faction === "friendly" &&
+        tokenInsideRegion(entry.token, extractionRegion)
+      ) {
+        state.friendlyInExtractionZone += 1;
+      }
+
+      if (!tokensAreAdjacent(entry.token, objectiveToken)) {
+        continue;
+      }
+
+      if (entry.faction === "friendly") {
+        state.friendlyAdjacent += 1;
+      } else if (entry.faction === "hostile") {
+        state.hostileAdjacent += 1;
+      }
+    }
+
+    state.canExtractObjective =
+      state.objectiveInExtraction &&
+      state.friendlyAdjacent > 0 &&
+      state.hostileAdjacent === 0 &&
+      !state.objectiveDestroyed &&
+      !state.objectiveExtracted;
 
     return state;
   }
@@ -420,6 +499,61 @@ function controlZoneLabel(controller) {
   if (controller === "friendly") return "ALLIED";
   if (controller === "hostile") return "HOSTILE";
   return "CONTESTED";
+}
+
+function renderExtractionState(sitrep, state) {
+  let objectiveStatus = "AWAITING RECOVERY";
+  let statusClass = "active";
+
+  if (state.objectiveExtracted) {
+    objectiveStatus = "OBJECTIVE EXTRACTED";
+    statusClass = "extracted";
+  } else if (state.objectiveDestroyed) {
+    objectiveStatus = "OBJECTIVE DESTROYED";
+    statusClass = "destroyed";
+  } else if (state.canExtractObjective) {
+    objectiveStatus = "READY TO EXTRACT";
+    statusClass = "ready";
+  } else if (state.objectiveInExtraction) {
+    objectiveStatus = "EXTRACTION CONTESTED";
+    statusClass = "contested";
+  } else if (state.friendlyAdjacent > 0) {
+    objectiveStatus = "OBJECTIVE SECURED";
+    statusClass = "secured";
+  }
+
+  return `
+    <div class="lst-extraction-objective">
+      <span>OBJECTIVE</span>
+      <strong>${esc(state.objectiveName)}</strong>
+    </div>
+
+    <div class="lst-extraction-status lst-extraction-${statusClass}">
+      ${objectiveStatus}
+    </div>
+
+    <div class="lst-extraction-grid">
+      <div class="lst-extraction-stat">
+        <span>OBJECTIVE IN EZ</span>
+        <strong>${state.objectiveInExtraction ? "YES" : "NO"}</strong>
+      </div>
+
+      <div class="lst-extraction-stat allied">
+        <span>ALLIES IN EZ</span>
+        <strong>${state.friendlyInExtractionZone}</strong>
+      </div>
+
+      <div class="lst-extraction-stat allied">
+        <span>ADJACENT ALLIES</span>
+        <strong>${state.friendlyAdjacent}</strong>
+      </div>
+
+      <div class="lst-extraction-stat hostile">
+        <span>ADJACENT HOSTILES</span>
+        <strong>${state.hostileAdjacent}</strong>
+      </div>
+    </div>
+  `;
 }
 
 function renderEscortState(sitrep, state) {
@@ -951,7 +1085,9 @@ function renderHUD() {
             ? renderControlState(sitrep, state)
             : sitrep.type === "escort"
               ? renderEscortState(sitrep, state)
-              : `
+              : sitrep.type === "extraction"
+                ? renderExtractionState(sitrep, state)
+                : `
               <div class="lst-zone-name">
                 <i class="fas fa-bullseye"></i>
                 ${esc(state.regionName)}
@@ -990,10 +1126,47 @@ function renderHUD() {
                   ? "Control requires exactly four valid Scene Regions."
                   : sitrep.type === "escort"
                     ? "Escort requires a valid Objective combatant and Extraction Zone Region."
-                    : "The configured Region cannot be found on this combat's Scene."
+                    : sitrep.type === "extraction"
+                      ? "Extraction requires a valid Objective combatant and Extraction Zone Region."
+                      : "The configured Region cannot be found on this combat's Scene."
               }
             </div>
           `
+      }
+
+      ${
+        game.user.isGM && sitrep.type === "extraction"
+          ? `
+            <div class="lst-extraction-controls">
+              <button
+                type="button"
+                data-action="extraction-extract"
+                ${
+                  !state.canExtractObjective ||
+                  state.objectiveDestroyed ||
+                  state.objectiveExtracted
+                    ? "disabled"
+                    : ""
+                }
+              >
+                Extract Objective
+              </button>
+
+              <button
+                type="button"
+                data-action="extraction-destroy"
+                ${
+                  state.objectiveDestroyed ||
+                  state.objectiveExtracted
+                    ? "disabled"
+                    : ""
+                }
+              >
+                Destroy Objective
+              </button>
+            </div>
+          `
+          : ""
       }
 
       ${
@@ -1089,6 +1262,20 @@ function renderHUD() {
     ?.addEventListener(
       "click",
       openSetupDialog
+    );
+
+  hud
+    .querySelector('[data-action="extraction-extract"]')
+    ?.addEventListener(
+      "click",
+      () => resolveExtractionObjective("extracted")
+    );
+
+  hud
+    .querySelector('[data-action="extraction-destroy"]')
+    ?.addEventListener(
+      "click",
+      () => resolveExtractionObjective("destroyed")
     );
 
   hud
@@ -1214,6 +1401,28 @@ async function evaluateSitrep(
     changes,
     "round"
   );
+
+  if (sitrep.type === "extraction") {
+    if (state.objectiveDestroyed) {
+      if (sitrep.extractionStatus !== "destroyed") {
+        await resolveExtractionObjective("destroyed");
+      }
+
+      return;
+    }
+
+    if (
+      roundChanged &&
+      Number(changes.round) > Number(sitrep.finalRound)
+    ) {
+      await setResult(
+        "defeat",
+        `The Objective was not extracted by the end of round ${sitrep.finalRound}. Any allied units remaining on the battlefield are captured or overrun.`
+      );
+    }
+
+    return;
+  }
 
   if (sitrep.type === "escort") {
     if (state.objectiveDestroyed) {
@@ -1358,6 +1567,75 @@ async function evaluateSitrep(
       : `At the end of round ${sitrep.finalRound}, allied units did not control the zone (${state.friendlyInZone} allied, ${state.hostileInZone} hostile).`;
 
     await setResult(won ? "victory" : "defeat", reason);
+  }
+}
+
+async function resolveExtractionObjective(outcome) {
+  const combat = activeCombat();
+  const sitrep = getSitrep(combat);
+
+  if (
+    !game.user.isGM ||
+    !combat ||
+    !sitrep ||
+    sitrep.type !== "extraction"
+  ) {
+    return;
+  }
+
+  if (outcome === "extracted") {
+    const state = calculateState(combat, sitrep);
+
+    if (!state.canExtractObjective) {
+      ui.notifications.warn(
+        "The Objective cannot currently be extracted. It must be inside the Extraction Zone, adjacent to an allied unit, and uncontested."
+      );
+
+      return;
+    }
+
+    await combat.setFlag(MODULE_ID, FLAG_KEY, {
+      ...sitrep,
+      extractionStatus: "extracted"
+    });
+
+    await setResult(
+      "victory",
+      "The Objective was safely recovered and extracted."
+    );
+
+    return;
+  }
+
+  if (outcome === "destroyed") {
+    const updatedSitrep = {
+      ...sitrep,
+      extractionStatus: "destroyed",
+      status: "draw",
+      resultReason:
+        "The Objective was destroyed. Neither side achieved victory."
+    };
+
+    await combat.setFlag(
+      MODULE_ID,
+      FLAG_KEY,
+      updatedSitrep
+    );
+
+    if (isPrimaryGM()) {
+      await ChatMessage.create({
+        speaker: {
+          alias: "MISSION CONTROL"
+        },
+        content: `
+          <div class="lst-chat-result">
+            <strong>NO VICTOR</strong>
+            <br>
+            The Objective was destroyed.
+          </div>
+        `
+      });
+    }
   }
 }
 
@@ -1547,6 +1825,40 @@ function setupDialogHTML(
     )
     .join("");
 
+  const extractionZoneOptions = regions
+    .map(
+      region => `
+        <option
+          value="${esc(region.id)}"
+          ${
+            existing?.extractionZoneRegionId === region.id
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(region.name || region.id)}
+        </option>
+      `
+    )
+    .join("");
+
+  const extractionObjectiveOptions = [...(combat.combatants ?? [])]
+    .map(
+      combatant => `
+        <option
+          value="${esc(combatant.id)}"
+          ${
+            existing?.extractionObjectiveCombatantId === combatant.id
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(combatant.name || combatant.token?.name || combatant.id)}
+        </option>
+      `
+    )
+    .join("");
+
   const startRound = Math.max(
     Number(combat.round ?? 1),
     1
@@ -1643,6 +1955,40 @@ function setupDialogHTML(
           Select exactly four Scene Regions. Hold Ctrl while clicking
           to select multiple Regions.
         </p>
+      </div>
+
+      <div class="lst-extraction-fields" style="display: none;">
+        <div class="form-group">
+          <label>Objective combatant</label>
+
+          <select name="extractionObjectiveCombatantId">
+            <option value="">
+              — Select the Objective —
+            </option>
+
+            ${extractionObjectiveOptions}
+          </select>
+
+          <p class="notes">
+            Add the Objective token to the Combat Tracker, then select it here.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label>Extraction Zone</label>
+
+          <select name="extractionZoneRegionId">
+            <option value="">
+              — Select the Extraction Zone —
+            </option>
+
+            ${extractionZoneOptions}
+          </select>
+
+          <p class="notes">
+            The Objective must reach this Region while adjacent to an allied unit and uncontested.
+          </p>
+        </div>
       </div>
 
       <div class="lst-escort-fields" style="display: none;">
@@ -1784,10 +2130,34 @@ async function saveSetup(
     formData.get("escortExtractionRegionId") ?? ""
   );
 
+  const extractionObjectiveCombatantId = String(
+    formData.get("extractionObjectiveCombatantId") ?? ""
+  );
+
+  const extractionZoneRegionId = String(
+    formData.get("extractionZoneRegionId") ?? ""
+  );
+
   if (sitrepType === "control") {
     if (controlRegionIds.length !== 4) {
       ui.notifications.error(
         "Control requires exactly four selected Scene Regions."
+      );
+
+      return false;
+    }
+  } else if (sitrepType === "extraction") {
+    if (!extractionObjectiveCombatantId) {
+      ui.notifications.error(
+        "Extraction requires an Objective combatant."
+      );
+
+      return false;
+    }
+
+    if (!extractionZoneRegionId) {
+      ui.notifications.error(
+        "Extraction requires an Extraction Zone Region."
       );
 
       return false;
@@ -1857,6 +2227,18 @@ async function saveSetup(
         : "",
 
     escortStatus: "active",
+
+    extractionObjectiveCombatantId:
+      sitrepType === "extraction"
+        ? extractionObjectiveCombatantId
+        : "",
+
+    extractionZoneRegionId:
+      sitrepType === "extraction"
+        ? extractionZoneRegionId
+        : "",
+
+    extractionStatus: "active",
 
     title: String(
       formData.get("title") ||
@@ -1986,11 +2368,16 @@ function openSetupDialog() {
         const singleRegionGroup = root.querySelector(".lst-single-region-group");
         const controlRegionsGroup = root.querySelector(".lst-control-regions-group");
         const escortFields = root.querySelector(".lst-escort-fields");
+        const extractionFields = root.querySelector(".lst-extraction-fields");
 
         const updateSitrepFields = () => {
           const isControl = typeSelect?.value === "control";
           const isEscort = typeSelect?.value === "escort";
-          const usesSingleRegion = !isControl && !isEscort;
+          const isExtraction = typeSelect?.value === "extraction";
+          const usesSingleRegion =
+            !isControl &&
+            !isEscort &&
+            !isExtraction;
 
           if (singleRegionGroup) {
             singleRegionGroup.style.display = usesSingleRegion ? "" : "none";
@@ -2004,8 +2391,16 @@ function openSetupDialog() {
             escortFields.style.display = isEscort ? "" : "none";
           }
 
+          if (extractionFields) {
+            extractionFields.style.display = isExtraction ? "" : "none";
+          }
+
           if (roundLimitInput && !existing) {
-            roundLimitInput.value = isControl ? "6" : "8";
+            roundLimitInput.value = isControl
+              ? "6"
+              : isExtraction
+                ? "10"
+                : "8";
           }
         };
 
