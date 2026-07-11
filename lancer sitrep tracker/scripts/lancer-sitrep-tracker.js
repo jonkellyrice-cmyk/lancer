@@ -2,6 +2,7 @@ const MODULE_ID = "lancer-sitrep-tracker";
 const FLAG_KEY = "sitrep";
 const HUD_ID = "lancer-sitrep-hud";
 
+
 const DEFAULTS = {
   type: "gauntlet",
   title: "GAUNTLET",
@@ -20,15 +21,19 @@ const DEFAULTS = {
   }
 };
 
+
 const esc = value => foundry.utils.escapeHTML(String(value ?? ""));
+
 
 function activeCombat() {
   return game.combat ?? game.combats?.active ?? null;
 }
 
+
 function getSitrep(combat = activeCombat()) {
   return combat?.getFlag(MODULE_ID, FLAG_KEY) ?? null;
 }
+
 
 function isPrimaryGM() {
   if (!game.user?.isGM) return false;
@@ -36,9 +41,11 @@ function isPrimaryGM() {
   return !activeGMs.length || activeGMs[0].id === game.user.id;
 }
 
+
 function tokenDisposition(tokenDocument) {
   return Number(tokenDocument?.disposition ?? 0);
 }
+
 
 function factionOf(tokenDocument) {
   const disposition = tokenDisposition(tokenDocument);
@@ -49,6 +56,7 @@ function factionOf(tokenDocument) {
   return "neutral";
 }
 
+
 function combatantIsDefeated(combatant) {
   if (typeof combatant?.isDefeated === "boolean") return combatant.isDefeated;
   if (combatant?.defeated === true) return true;
@@ -56,10 +64,12 @@ function combatantIsDefeated(combatant) {
   return Boolean(defeatedId && combatant?.actor?.statuses?.has?.(defeatedId));
 }
 
+
 function regionFor(combat, sitrep) {
   const scene = combat?.scene ?? canvas.scene;
   return scene?.regions?.get(sitrep?.regionId) ?? null;
 }
+
 
 function tokenInsideRegion(tokenDocument, region) {
   if (!tokenDocument || !region) return false;
@@ -70,6 +80,7 @@ function tokenInsideRegion(tokenDocument, region) {
     return Boolean(tokenDocument.regions?.has?.(region.id));
   }
 }
+
 
 function calculateState(combat = activeCombat(), sitrep = getSitrep(combat)) {
   const empty = {
@@ -86,9 +97,11 @@ function calculateState(combat = activeCombat(), sitrep = getSitrep(combat)) {
     immediateReason: ""
   };
 
+
   if (!combat || !sitrep) return empty;
   const region = regionFor(combat, sitrep);
   if (!region) return empty;
+
 
   const state = {
     ...empty,
@@ -96,12 +109,14 @@ function calculateState(combat = activeCombat(), sitrep = getSitrep(combat)) {
     regionName: region.name || "Control Zone"
   };
 
+
   for (const combatant of combat.combatants ?? []) {
     if (combatantIsDefeated(combatant)) continue;
     const token = combatant.token;
     if (!token) continue;
     const faction = factionOf(token);
     if (faction === "neutral") continue;
+
 
     const inside = tokenInsideRegion(token, region);
     if (faction === "friendly") {
@@ -113,13 +128,16 @@ function calculateState(combat = activeCombat(), sitrep = getSitrep(combat)) {
     }
   }
 
+
   if (state.friendlyInZone > state.hostileInZone) state.controller = "friendly";
   else if (state.hostileInZone > state.friendlyInZone) state.controller = "hostile";
   else state.controller = "contested";
 
+
   const currentRound = Math.max(Number(combat.round ?? sitrep.startRound ?? 1), 1);
   state.currentRound = currentRound;
   state.roundsRemaining = Math.max(Number(sitrep.finalRound) - currentRound + 1, 0);
+
 
   if (sitrep.rules?.enemyElimination && state.hostileStanding === 0 && state.friendlyStanding > 0) {
     state.immediateVictory = true;
@@ -133,8 +151,10 @@ function calculateState(combat = activeCombat(), sitrep = getSitrep(combat)) {
     state.immediateReason = "The allies already in the zone outnumber every surviving hostile unit.";
   }
 
+
   return state;
 }
+
 
 function progressPips(sitrep, state) {
   const total = Math.max(Number(sitrep.roundLimit ?? 8), 1);
@@ -144,28 +164,34 @@ function progressPips(sitrep, state) {
   ).join("");
 }
 
+
 function controlLabel(controller) {
   if (controller === "friendly") return "ALLIED CONTROL";
   if (controller === "hostile") return "HOSTILE CONTROL";
   return "CONTESTED";
 }
 
+
 function renderHUD() {
   document.getElementById(HUD_ID)?.remove();
+
 
   const combat = activeCombat();
   const sitrep = getSitrep(combat);
   if (!combat || !sitrep?.active) return;
+
 
   const state = calculateState(combat, sitrep);
   const hud = document.createElement("section");
   hud.id = HUD_ID;
   hud.className = `lst-hud lst-${esc(sitrep.status)} lst-control-${esc(state.controller)}`;
 
+
   let statusText = state.roundsRemaining === 1 ? "FINAL ROUND" : `${state.roundsRemaining} ROUNDS REMAINING`;
   if (sitrep.status === "victory") statusText = "MISSION SUCCESS";
   if (sitrep.status === "defeat") statusText = "MISSION FAILED";
   if (sitrep.status === "paused") statusText = "SITREP PAUSED";
+
 
   hud.innerHTML = `
     <header class="lst-header">
@@ -176,7 +202,9 @@ function renderHUD() {
       ${game.user.isGM ? `<button type="button" data-action="configure" title="Configure Sitrep"><i class="fas fa-cog"></i></button>` : ""}
     </header>
 
+
     <div class="lst-objective">${esc(sitrep.objective)}</div>
+
 
     <div class="lst-clock">
       <div class="lst-clock-row">
@@ -186,9 +214,11 @@ function renderHUD() {
       <div class="lst-pips">${progressPips(sitrep, state)}</div>
     </div>
 
+
     ${state.valid ? `
       <div class="lst-zone-name"><i class="fas fa-bullseye"></i> ${esc(state.regionName)}</div>
       <div class="lst-control-banner">${controlLabel(state.controller)}</div>
+
 
       <div class="lst-grid">
         <div class="lst-stat allied"><span>ALLIES IN ZONE</span><strong>${state.friendlyInZone}</strong></div>
@@ -198,7 +228,9 @@ function renderHUD() {
       </div>
     ` : `<div class="lst-error">The configured Region cannot be found on this combat's Scene.</div>`}
 
+
     ${sitrep.resultReason ? `<div class="lst-result-reason">${esc(sitrep.resultReason)}</div>` : ""}
+
 
     ${game.user.isGM ? `
       <footer class="lst-gm-controls">
@@ -210,6 +242,7 @@ function renderHUD() {
     ` : ""}
   `;
 
+
   document.body.appendChild(hud);
   hud.querySelector('[data-action="configure"]')?.addEventListener("click", openSetupDialog);
   hud.querySelector('[data-action="toggle"]')?.addEventListener("click", togglePause);
@@ -217,6 +250,7 @@ function renderHUD() {
   hud.querySelector('[data-action="defeat"]')?.addEventListener("click", () => setResult("defeat", "Defeat declared by the GM."));
   hud.querySelector('[data-action="end"]')?.addEventListener("click", endSitrep);
 }
+
 
 async function setResult(status, reason) {
   const combat = activeCombat();
@@ -231,21 +265,25 @@ async function setResult(status, reason) {
   }
 }
 
+
 async function evaluateSitrep(combat, changes = {}) {
   const sitrep = getSitrep(combat);
   if (!sitrep?.active || sitrep.status !== "active" || !isPrimaryGM()) return;
   const state = calculateState(combat, sitrep);
   if (!state.valid) return;
 
+
   if (state.immediateVictory) {
     await setResult("victory", state.immediateReason);
     return;
   }
 
+
   const roundChanged = Object.prototype.hasOwnProperty.call(changes, "round");
   const previousRound = Number(combat.previous?.round ?? 0);
   const advancedPastFinalRound = roundChanged && Number(combat.round) > Number(sitrep.finalRound);
   const fallbackPastFinalRound = roundChanged && previousRound === Number(sitrep.finalRound) && Number(combat.round) !== previousRound;
+
 
   if (advancedPastFinalRound || fallbackPastFinalRound) {
     const won = sitrep.rules?.finalZoneControl && state.friendlyInZone > state.hostileInZone && state.friendlyInZone > 0;
@@ -256,6 +294,7 @@ async function evaluateSitrep(combat, changes = {}) {
   }
 }
 
+
 async function togglePause() {
   const combat = activeCombat();
   const sitrep = getSitrep(combat);
@@ -264,12 +303,14 @@ async function togglePause() {
   await combat.setFlag(MODULE_ID, FLAG_KEY, { ...sitrep, status });
 }
 
+
 async function endSitrep() {
   const combat = activeCombat();
   if (!game.user.isGM || !combat) return;
   await combat.unsetFlag(MODULE_ID, FLAG_KEY);
   document.getElementById(HUD_ID)?.remove();
 }
+
 
 function setupDialogHTML(combat, existing) {
   const scene = combat.scene ?? canvas.scene;
@@ -279,6 +320,7 @@ function setupDialogHTML(combat, existing) {
   ).join("");
   const startRound = Math.max(Number(combat.round ?? 1), 1);
   const total = Number(existing?.roundLimit ?? 8);
+
 
   return `
     <form class="lst-setup-form">
@@ -314,6 +356,7 @@ function setupDialogHTML(combat, existing) {
   `;
 }
 
+
 async function saveSetup(html, combat) {
   const form = html.querySelector("form");
   const fd = new FormData(form);
@@ -346,12 +389,14 @@ async function saveSetup(html, combat) {
   return true;
 }
 
+
 function openSetupDialog() {
   if (!game.user.isGM) return ui.notifications.warn("Only a GM can configure a sitrep.");
   const combat = activeCombat();
   if (!combat) return ui.notifications.warn("Create and activate a Combat encounter first.");
   const scene = combat.scene ?? canvas.scene;
   if (!scene?.regions?.size) return ui.notifications.warn("Draw at least one Scene Region on the combat Scene first.");
+
 
   const existing = getSitrep(combat);
   new Dialog({
@@ -373,6 +418,7 @@ function openSetupDialog() {
   }, { width: 520 }).render(true);
 }
 
+
 function addCombatTrackerButton(app, html) {
   if (!game.user.isGM) return;
   const root = html[0] ?? html;
@@ -386,14 +432,17 @@ function addCombatTrackerButton(app, html) {
   header.prepend(button);
 }
 
+
 function scheduleRefresh() {
   clearTimeout(globalThis.__lancerSitrepRefresh);
   globalThis.__lancerSitrepRefresh = setTimeout(renderHUD, 50);
 }
 
+
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
 });
+
 
 Hooks.once("ready", () => {
   game.lancerSitrep = {
@@ -404,6 +453,7 @@ Hooks.once("ready", () => {
   };
   renderHUD();
 });
+
 
 Hooks.on("renderCombatTracker", addCombatTrackerButton);
 Hooks.on("canvasReady", scheduleRefresh);
@@ -420,3 +470,6 @@ Hooks.on("deleteToken", scheduleRefresh);
 Hooks.on("updateRegion", scheduleRefresh);
 Hooks.on("deleteRegion", scheduleRefresh);
 Hooks.on("controlToken", scheduleRefresh);
+
+
+
