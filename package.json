@@ -1,0 +1,8 @@
+{
+  "name": "lancer-development-tools",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "patch": "python ./dev_scripts/filepatcher.py"
+  }
+}
