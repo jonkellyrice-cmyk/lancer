@@ -1,0 +1,41 @@
+{
+  "name": "Scaffold Sitrep type selection",
+  "backup": true,
+  "operations": [
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "const esc = value =>\n  foundry.utils.escapeHTML(String(value ?? \"\"));",
+      "replace": "const SITREP_TYPES = [\n  { value: \"control\", label: \"Control\" },\n  { value: \"escort\", label: \"Escort\" },\n  { value: \"extraction\", label: \"Extraction\" },\n  { value: \"gauntlet\", label: \"Gauntlet\" },\n  { value: \"holdout\", label: \"Holdout\" },\n  { value: \"recon\", label: \"Recon\" }\n];\n\nconst esc = value =>\n  foundry.utils.escapeHTML(String(value ?? \"\"));",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "  const total = Number(\n    existing?.roundLimit ?? 8\n  );\n\n  return `",
+      "replace": "  const total = Number(\n    existing?.roundLimit ?? 8\n  );\n\n  const selectedSitrepType =\n    existing?.type ?? DEFAULTS.type;\n\n  const sitrepTypeOptions = SITREP_TYPES\n    .map(\n      sitrepType => `\n        <option\n          value=\"${esc(sitrepType.value)}\"\n          ${\n            selectedSitrepType === sitrepType.value\n              ? \"selected\"\n              : \"\"\n          }\n        >\n          ${esc(sitrepType.label)}\n        </option>\n      `\n    )\n    .join(\"\");\n\n  return `",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "      <div class=\"form-group\">\n        <label>Mission title</label>",
+      "replace": "      <div class=\"form-group\">\n        <label>Sitrep type</label>\n\n        <select name=\"sitrepType\">\n          ${sitrepTypeOptions}\n        </select>\n\n        <p class=\"notes\">\n          Sitrep-specific rules will be added in a future update.\n          For now, all selections use the current Gauntlet tracking logic.\n        </p>\n      </div>\n\n      <div class=\"form-group\">\n        <label>Mission title</label>",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "  const data = {\n    ...DEFAULTS,\n\n    title: String(",
+      "replace": "  const data = {\n    ...DEFAULTS,\n\n    type: String(\n      formData.get(\"sitrepType\") ||\n      DEFAULTS.type\n    ),\n\n    title: String(",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "      title:\n        \"Lancer Sitrep Tracker — Gauntlet\",",
+      "replace": "      title:\n        \"Lancer Sitrep Tracker — Setup\",",
+      "expected_matches": 1
+    }
+  ]
+}

@@ -22,6 +22,15 @@ const DEFAULTS = {
   }
 };
 
+const SITREP_TYPES = [
+  { value: "control", label: "Control" },
+  { value: "escort", label: "Escort" },
+  { value: "extraction", label: "Extraction" },
+  { value: "gauntlet", label: "Gauntlet" },
+  { value: "holdout", label: "Holdout" },
+  { value: "recon", label: "Recon" }
+];
+
 const esc = value =>
   foundry.utils.escapeHTML(String(value ?? ""));
 
@@ -1022,12 +1031,45 @@ function setupDialogHTML(
     existing?.roundLimit ?? 8
   );
 
+  const selectedSitrepType =
+    existing?.type ?? DEFAULTS.type;
+
+  const sitrepTypeOptions = SITREP_TYPES
+    .map(
+      sitrepType => `
+        <option
+          value="${esc(sitrepType.value)}"
+          ${
+            selectedSitrepType === sitrepType.value
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(sitrepType.label)}
+        </option>
+      `
+    )
+    .join("");
+
   return `
     <form class="lst-setup-form">
       <p>
         Draw a <strong>Scene Region</strong>
         over the control zone before beginning the sitrep.
       </p>
+
+      <div class="form-group">
+        <label>Sitrep type</label>
+
+        <select name="sitrepType">
+          ${sitrepTypeOptions}
+        </select>
+
+        <p class="notes">
+          Sitrep-specific rules will be added in a future update.
+          For now, all selections use the current Gauntlet tracking logic.
+        </p>
+      </div>
 
       <div class="form-group">
         <label>Mission title</label>
@@ -1181,6 +1223,11 @@ async function saveSetup(
   const data = {
     ...DEFAULTS,
 
+    type: String(
+      formData.get("sitrepType") ||
+      DEFAULTS.type
+    ),
+
     title: String(
       formData.get("title") ||
       "GAUNTLET"
@@ -1265,7 +1312,7 @@ function openSetupDialog() {
   new Dialog(
     {
       title:
-        "Lancer Sitrep Tracker — Gauntlet",
+        "Lancer Sitrep Tracker — Setup",
 
       content:
         setupDialogHTML(
