@@ -103,10 +103,9 @@ function wallBlocksElevation(wallDocument, elevation) {
    * Unconfigured walls remain infinitely tall and behave exactly
    * like ordinary Foundry walls.
    *
-   * A wall blocks sight and movement while the token's elevation
-   * lies inside its vertical span. The upper boundary is exclusive,
-   * so a token at elevation 3 can see and move over a wall whose
-   * top is elevation 3.
+   * A wall blocks sight while the viewer's elevation lies inside
+   * its vertical span. The upper boundary is exclusive, so a token
+   * at elevation 3 can see over a wall whose top is elevation 3.
    */
   return elevation >= bottom && elevation < top;
 }
@@ -153,29 +152,24 @@ function installVisionPolygonWrapper() {
 
   prototype[methodName] = function (...args) {
     try {
-      const restrictionType = String(
+      const restrictionType =
         this?.config?.type ??
         this?.config?.wallRestrictionType ??
-        "sight"
-      ).toLowerCase();
+        "sight";
 
       /*
-       * Elevation affects both vision polygons and movement
-       * collision polygons. Sound and unrelated collision types
-       * continue using ordinary Foundry wall behavior.
+       * Elevation changes sight only. Movement, sound, and other
+       * collision polygons continue using ordinary Foundry walls.
        */
-      const isElevationAwarePolygon = [
-        "sight",
-        "vision",
-        "move",
-        "movement"
-      ].includes(restrictionType);
+      const isSightPolygon =
+        restrictionType === "sight" ||
+        restrictionType === "vision";
 
-      if (isElevationAwarePolygon) {
-        const tokenElevation =
+      if (isSightPolygon) {
+        const viewerElevation =
           viewingElevationFromPolygon(this);
 
-        if (tokenElevation !== null) {
+        if (viewerElevation !== null) {
           const wallDocument =
             wallDocumentFromEdge(args[0]);
 
@@ -184,14 +178,9 @@ function installVisionPolygonWrapper() {
             wallHasFiniteElevation(wallDocument) &&
             !wallBlocksElevation(
               wallDocument,
-              tokenElevation
+              viewerElevation
             )
           ) {
-            /*
-             * Returning false excludes this wall from the polygon.
-             * For vision, the token can see over it. For movement,
-             * the token can pass over or beneath it.
-             */
             return false;
           }
         }
@@ -400,10 +389,10 @@ function injectWallElevationFields(app, html) {
     </div>
 
     <p class="notes">
-      The wall blocks sight and movement only while a token's
-      elevation is inside this range. A token at or above the Top
-      Elevation can see and move over it. Leave both fields blank
-      for an ordinary infinitely tall Foundry wall.
+      The wall blocks sight only while a viewing token's elevation
+      is inside this range. Leave both fields blank for an ordinary
+      infinitely tall Foundry wall. This does not change movement
+      collision.
     </p>
 
     <div class="lancer-elevation-los-presets">
