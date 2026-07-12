@@ -17,6 +17,9 @@ const DEFAULTS = {
   extractionZoneRegionId: "",
   extractionStatus: "active",
   holdoutBaseScore: 4,
+  reconRegionIds: [],
+  reconTrueRegionId: "",
+  reconScannedRegionIds: [],
   scores: {
     friendly: 0,
     hostile: 0
@@ -220,7 +223,11 @@ function calculateState(
     friendlyInExtractionZone: 0,
     canExtractObjective: false,
     holdoutBaseScore: Number(sitrep?.holdoutBaseScore ?? 4),
-    holdoutScore: Number(sitrep?.holdoutBaseScore ?? 4)
+    holdoutScore: Number(sitrep?.holdoutBaseScore ?? 4),
+    reconZones: [],
+    reconTrueRegionId: sitrep?.reconTrueRegionId ?? "",
+    reconTrueZoneController: "none",
+    reconTrueZoneScanned: false
   };
 
   if (!combat || !sitrep) return empty;
@@ -292,6 +299,76 @@ function calculateState(
       state.friendlyZones,
       state.hostileZones
     );
+
+    return state;
+  }
+
+  if (sitrep.type === "recon") {
+    const scene = combat?.scene ?? canvas.scene;
+
+    const regionIds = Array.isArray(sitrep.reconRegionIds)
+      ? sitrep.reconRegionIds
+      : [];
+
+    const regions = regionIds
+      .map(regionId => scene?.regions?.get(regionId) ?? null)
+      .filter(Boolean);
+
+    const trueRegionId = String(
+      sitrep.reconTrueRegionId ?? ""
+    );
+
+    const scannedRegionIds = Array.isArray(
+      sitrep.reconScannedRegionIds
+    )
+      ? sitrep.reconScannedRegionIds
+      : [];
+
+    state.valid =
+      regions.length === 4 &&
+      regions.some(region => region.id === trueRegionId);
+
+    if (!state.valid) return state;
+
+    state.reconZones = regions.map((region, index) => {
+      let friendly = 0;
+      let hostile = 0;
+
+      for (const entry of standingCombatants) {
+        if (!tokenInsideRegion(entry.token, region)) continue;
+
+        if (entry.faction === "friendly") {
+          friendly += 1;
+        } else if (entry.faction === "hostile") {
+          hostile += 1;
+        }
+      }
+
+      const controller = controllerFromCounts(
+        friendly,
+        hostile
+      );
+
+      const isTrueZone = region.id === trueRegionId;
+      const scanned = scannedRegionIds.includes(region.id);
+
+      if (isTrueZone) {
+        state.reconTrueZoneController = controller;
+        state.reconTrueZoneScanned = scanned;
+      }
+
+      return {
+        id: region.id,
+        name:
+          region.name ||
+          `Objective ${String.fromCharCode(65 + index)}`,
+        friendly,
+        hostile,
+        controller,
+        scanned,
+        isTrueZone
+      };
+    });
 
     return state;
   }
@@ -537,6 +614,97 @@ function controlZoneLabel(controller) {
   if (controller === "friendly") return "ALLIED";
   if (controller === "hostile") return "HOSTILE";
   return "CONTESTED";
+}
+
+function renderReconState(sitrep, state) {
+  const zones = state.reconZones
+    .map(
+      (zone, index) => {
+        let scanResult = "UNSCANNED";
+        let scanClass = "unscanned";
+
+        if (zone.scanned && zone.isTrueZone) {
+          scanResult = "TRUE CZ";
+          scanClass = "true";
+        } else if (zone.scanned) {
+          scanResult = "FALSE CZ";
+          scanClass = "false";
+        }
+
+        return `
+          <div class="lst-recon-zone lst-zone-${esc(zone.controller)}">
+            <div class="lst-recon-zone-heading">
+              <span>
+                OBJECTIVE ${String.fromCharCode(65 + index)}
+              </span>
+
+              <strong>${esc(zone.name)}</strong>
+            </div>
+
+            <div class="lst-recon-scan lst-recon-scan-${scanClass}">
+              ${scanResult}
+            </div>
+
+            <div class="lst-recon-control">
+              ${controlZoneLabel(zone.controller)} CONTROL
+            </div>
+
+            <div class="lst-recon-counts">
+              <span class="allied">
+                ${zone.friendly} ALLIED
+              </span>
+
+              <span class="hostile">
+                ${zone.hostile} HOSTILE
+              </span>
+            </div>
+
+            ${
+              game.user.isGM && !zone.scanned
+                ? `
+                  <button
+                    type="button"
+                    class="lst-recon-scan-button"
+                    data-action="recon-scan"
+                    data-region-id="${esc(zone.id)}"
+                  >
+                    Record Scan
+                  </button>
+                `
+                : ""
+            }
+          </div>
+        `;
+      }
+    )
+    .join("");
+
+  const trueZoneStatus = state.reconTrueZoneScanned
+    ? state.reconTrueZoneController === "friendly"
+      ? "TRUE CZ SECURED"
+      : state.reconTrueZoneController === "hostile"
+        ? "TRUE CZ HOSTILE"
+        : "TRUE CZ CONTESTED"
+    : "TRUE CZ UNKNOWN";
+
+  const trueZoneClass = state.reconTrueZoneScanned
+    ? state.reconTrueZoneController
+    : "unknown";
+
+  return `
+    <div class="lst-recon-summary lst-recon-summary-${trueZoneClass}">
+      ${trueZoneStatus}
+    </div>
+
+    <div class="lst-recon-zone-grid">
+      ${zones}
+    </div>
+
+    <div class="lst-recon-note">
+      A character inside a Control Zone may use a full action
+      to scan it. The GM then records the scan result here.
+    </div>
+  `;
 }
 
 function renderHoldoutState(sitrep, state) {
@@ -1181,7 +1349,9 @@ function renderHUD() {
                 ? renderExtractionState(sitrep, state)
                 : sitrep.type === "holdout"
                   ? renderHoldoutState(sitrep, state)
-                  : `
+                  : sitrep.type === "recon"
+                    ? renderReconState(sitrep, state)
+                    : `
               <div class="lst-zone-name">
                 <i class="fas fa-bullseye"></i>
                 ${esc(state.regionName)}
@@ -1224,7 +1394,9 @@ function renderHUD() {
                       ? "Extraction requires a valid Objective combatant and Extraction Zone Region."
                       : sitrep.type === "holdout"
                         ? "Holdout requires a valid Control Zone Region."
-                        : "The configured Region cannot be found on this combat's Scene."
+                        : sitrep.type === "recon"
+                          ? "Recon requires exactly four valid Control Zone Regions and one designated True Control Zone."
+                          : "The configured Region cannot be found on this combat's Scene."
               }
             </div>
           `
@@ -1359,6 +1531,18 @@ function renderHUD() {
       "click",
       openSetupDialog
     );
+
+  hud
+    .querySelectorAll('[data-action="recon-scan"]')
+    .forEach(button => {
+      button.addEventListener("click", () => {
+        const regionId = String(
+          button.dataset.regionId ?? ""
+        );
+
+        recordReconScan(regionId);
+      });
+    });
 
   hud
     .querySelector('[data-action="extraction-extract"]')
@@ -1497,6 +1681,40 @@ async function evaluateSitrep(
     changes,
     "round"
   );
+
+  if (sitrep.type === "recon") {
+    if (
+      roundChanged &&
+      Number(changes.round) > Number(sitrep.finalRound)
+    ) {
+      const trueZone = state.reconZones.find(
+        zone => zone.isTrueZone
+      );
+
+      const alliesControlTrueZone =
+        trueZone?.controller === "friendly" &&
+        Number(trueZone?.friendly ?? 0) > 0 &&
+        Number(trueZone?.hostile ?? 0) === 0;
+
+      if (alliesControlTrueZone) {
+        await setResult(
+          "victory",
+          `The allies controlled the True Control Zone at the end of round ${sitrep.finalRound}.`
+        );
+      } else {
+        const trueZoneStatus = trueZone
+          ? controlZoneLabel(trueZone.controller).toLowerCase()
+          : "unresolved";
+
+        await setResult(
+          "defeat",
+          `The allies did not control the True Control Zone at the end of round ${sitrep.finalRound}. Its final status was ${trueZoneStatus}.`
+        );
+      }
+    }
+
+    return;
+  }
 
   if (sitrep.type === "holdout") {
     if (
@@ -1691,6 +1909,73 @@ async function evaluateSitrep(
       : `At the end of round ${sitrep.finalRound}, allied units did not control the zone (${state.friendlyInZone} allied, ${state.hostileInZone} hostile).`;
 
     await setResult(won ? "victory" : "defeat", reason);
+  }
+}
+
+async function recordReconScan(regionId) {
+  const combat = activeCombat();
+  const sitrep = getSitrep(combat);
+
+  if (
+    !game.user.isGM ||
+    !combat ||
+    !sitrep ||
+    sitrep.type !== "recon" ||
+    !regionId
+  ) {
+    return;
+  }
+
+  const validRegionIds = Array.isArray(sitrep.reconRegionIds)
+    ? sitrep.reconRegionIds
+    : [];
+
+  if (!validRegionIds.includes(regionId)) {
+    ui.notifications.error(
+      "That Region is not one of this Recon sitrep's Control Zones."
+    );
+
+    return;
+  }
+
+  const scannedRegionIds = Array.isArray(
+    sitrep.reconScannedRegionIds
+  )
+    ? [...sitrep.reconScannedRegionIds]
+    : [];
+
+  if (scannedRegionIds.includes(regionId)) {
+    return;
+  }
+
+  scannedRegionIds.push(regionId);
+
+  await combat.setFlag(MODULE_ID, FLAG_KEY, {
+    ...sitrep,
+    reconScannedRegionIds: scannedRegionIds
+  });
+
+  const scene = combat.scene ?? canvas.scene;
+  const region = scene?.regions?.get(regionId);
+  const isTrueZone = regionId === sitrep.reconTrueRegionId;
+
+  if (isPrimaryGM()) {
+    await ChatMessage.create({
+      speaker: {
+        alias: "MISSION CONTROL"
+      },
+      content: `
+        <div class="lst-chat-result ${
+          isTrueZone ? "victory" : ""
+        }">
+          <strong>
+            ${esc(region?.name || "Control Zone")} SCANNED
+          </strong>
+          <br>
+          ${isTrueZone ? "TRUE CONTROL ZONE" : "FALSE CONTROL ZONE"}
+        </div>
+      `
+    });
   }
 }
 
@@ -1966,6 +2251,46 @@ function setupDialogHTML(
     )
     .join("");
 
+  const selectedReconRegionIds = Array.isArray(
+    existing?.reconRegionIds
+  )
+    ? existing.reconRegionIds
+    : [];
+
+  const reconRegionOptions = regions
+    .map(
+      region => `
+        <option
+          value="${esc(region.id)}"
+          ${
+            selectedReconRegionIds.includes(region.id)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(region.name || region.id)}
+        </option>
+      `
+    )
+    .join("");
+
+  const reconTrueRegionOptions = regions
+    .map(
+      region => `
+        <option
+          value="${esc(region.id)}"
+          ${
+            existing?.reconTrueRegionId === region.id
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(region.name || region.id)}
+        </option>
+      `
+    )
+    .join("");
+
   const extractionObjectiveOptions = [...(combat.combatants ?? [])]
     .map(
       combatant => `
@@ -2079,6 +2404,38 @@ function setupDialogHTML(
           Select exactly four Scene Regions. Hold Ctrl while clicking
           to select multiple Regions.
         </p>
+      </div>
+
+      <div class="lst-recon-fields" style="display: none;">
+        <div class="form-group">
+          <label>Recon Control Zones</label>
+
+          <select name="reconRegionIds" multiple size="6">
+            ${reconRegionOptions}
+          </select>
+
+          <p class="notes">
+            Select exactly four Scene Regions. Hold Ctrl while
+            clicking to select multiple Regions.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label>True Control Zone</label>
+
+          <select name="reconTrueRegionId">
+            <option value="">
+              — Secretly select the True CZ —
+            </option>
+
+            ${reconTrueRegionOptions}
+          </select>
+
+          <p class="notes">
+            Only the GM sees this setup field. The selected zone
+            remains hidden from players until it is scanned.
+          </p>
+        </div>
       </div>
 
       <div class="lst-extraction-fields" style="display: none;">
@@ -2262,10 +2619,42 @@ async function saveSetup(
     formData.get("extractionZoneRegionId") ?? ""
   );
 
+  const reconRegionIds = formData
+    .getAll("reconRegionIds")
+    .map(String);
+
+  const reconTrueRegionId = String(
+    formData.get("reconTrueRegionId") ?? ""
+  );
+
   if (sitrepType === "control") {
     if (controlRegionIds.length !== 4) {
       ui.notifications.error(
         "Control requires exactly four selected Scene Regions."
+      );
+
+      return false;
+    }
+  } else if (sitrepType === "recon") {
+    if (reconRegionIds.length !== 4) {
+      ui.notifications.error(
+        "Recon requires exactly four selected Control Zone Regions."
+      );
+
+      return false;
+    }
+
+    if (!reconTrueRegionId) {
+      ui.notifications.error(
+        "Recon requires one secretly designated True Control Zone."
+      );
+
+      return false;
+    }
+
+    if (!reconRegionIds.includes(reconTrueRegionId)) {
+      ui.notifications.error(
+        "The True Control Zone must be one of the four selected Recon Regions."
       );
 
       return false;
@@ -2375,6 +2764,18 @@ async function saveSetup(
       sitrepType === "holdout"
         ? 4
         : Number(DEFAULTS.holdoutBaseScore ?? 4),
+
+    reconRegionIds:
+      sitrepType === "recon"
+        ? reconRegionIds
+        : [],
+
+    reconTrueRegionId:
+      sitrepType === "recon"
+        ? reconTrueRegionId
+        : "",
+
+    reconScannedRegionIds: [],
 
     title: String(
       formData.get("title") ||
@@ -2505,15 +2906,18 @@ function openSetupDialog() {
         const controlRegionsGroup = root.querySelector(".lst-control-regions-group");
         const escortFields = root.querySelector(".lst-escort-fields");
         const extractionFields = root.querySelector(".lst-extraction-fields");
+        const reconFields = root.querySelector(".lst-recon-fields");
 
         const updateSitrepFields = () => {
           const isControl = typeSelect?.value === "control";
           const isEscort = typeSelect?.value === "escort";
           const isExtraction = typeSelect?.value === "extraction";
+          const isRecon = typeSelect?.value === "recon";
           const usesSingleRegion =
             !isControl &&
             !isEscort &&
-            !isExtraction;
+            !isExtraction &&
+            !isRecon;
 
           if (singleRegionGroup) {
             singleRegionGroup.style.display = usesSingleRegion ? "" : "none";
@@ -2531,12 +2935,16 @@ function openSetupDialog() {
             extractionFields.style.display = isExtraction ? "" : "none";
           }
 
+          if (reconFields) {
+            reconFields.style.display = isRecon ? "" : "none";
+          }
+
           if (roundLimitInput && !existing) {
             const isHoldout =
               typeSelect?.value === "holdout";
 
             roundLimitInput.value =
-              isControl || isHoldout
+              isControl || isHoldout || isRecon
                 ? "6"
                 : isExtraction
                   ? "10"

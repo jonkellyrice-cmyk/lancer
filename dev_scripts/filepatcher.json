@@ -1,81 +1,131 @@
 {
-  "name": "Add Holdout Sitrep rules, setup defaults, resolution, and HUD",
+  "name": "Add Recon Sitrep rules, setup, scanning, resolution, and HUD",
   "backup": true,
   "operations": [
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "  extractionObjectiveCombatantId: \"\",\n  extractionZoneRegionId: \"\",\n  extractionStatus: \"active\",\n  scores: {",
-      "replace": "  extractionObjectiveCombatantId: \"\",\n  extractionZoneRegionId: \"\",\n  extractionStatus: \"active\",\n  holdoutBaseScore: 4,\n  scores: {",
+      "find": "  holdoutBaseScore: 4,\n  scores: {",
+      "replace": "  holdoutBaseScore: 4,\n  reconRegionIds: [],\n  reconTrueRegionId: \"\",\n  reconScannedRegionIds: [],\n  scores: {",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "    friendlyInExtractionZone: 0,\n    canExtractObjective: false",
-      "replace": "    friendlyInExtractionZone: 0,\n    canExtractObjective: false,\n    holdoutBaseScore: Number(sitrep?.holdoutBaseScore ?? 4),\n    holdoutScore: Number(sitrep?.holdoutBaseScore ?? 4)",
+      "find": "    holdoutBaseScore: Number(sitrep?.holdoutBaseScore ?? 4),\n    holdoutScore: Number(sitrep?.holdoutBaseScore ?? 4)",
+      "replace": "    holdoutBaseScore: Number(sitrep?.holdoutBaseScore ?? 4),\n    holdoutScore: Number(sitrep?.holdoutBaseScore ?? 4),\n    reconZones: [],\n    reconTrueRegionId: sitrep?.reconTrueRegionId ?? \"\",\n    reconTrueZoneController: \"none\",\n    reconTrueZoneScanned: false",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "  if (sitrep.type === \"extraction\") {\n    const scene = combat?.scene ?? canvas.scene;",
-      "replace": "  if (sitrep.type === \"holdout\") {\n    const region = regionFor(combat, sitrep);\n\n    state.valid = Boolean(region);\n\n    if (!region) return state;\n\n    state.regionName = region.name || \"Control Zone\";\n\n    for (const entry of standingCombatants) {\n      if (!tokenInsideRegion(entry.token, region)) continue;\n\n      if (entry.faction === \"friendly\") {\n        state.friendlyInZone += 1;\n      } else if (entry.faction === \"hostile\") {\n        state.hostileInZone += 1;\n      }\n    }\n\n    state.controller = controllerFromCounts(\n      state.friendlyInZone,\n      state.hostileInZone\n    );\n\n    state.holdoutBaseScore = Number(\n      sitrep.holdoutBaseScore ?? 4\n    );\n\n    state.holdoutScore =\n      state.holdoutBaseScore -\n      state.hostileInZone;\n\n    return state;\n  }\n\n  if (sitrep.type === \"extraction\") {\n    const scene = combat?.scene ?? canvas.scene;",
+      "find": "  if (sitrep.type === \"holdout\") {\n    const region = regionFor(combat, sitrep);",
+      "replace": "  if (sitrep.type === \"recon\") {\n    const scene = combat?.scene ?? canvas.scene;\n\n    const regionIds = Array.isArray(sitrep.reconRegionIds)\n      ? sitrep.reconRegionIds\n      : [];\n\n    const regions = regionIds\n      .map(regionId => scene?.regions?.get(regionId) ?? null)\n      .filter(Boolean);\n\n    const trueRegionId = String(\n      sitrep.reconTrueRegionId ?? \"\"\n    );\n\n    const scannedRegionIds = Array.isArray(\n      sitrep.reconScannedRegionIds\n    )\n      ? sitrep.reconScannedRegionIds\n      : [];\n\n    state.valid =\n      regions.length === 4 &&\n      regions.some(region => region.id === trueRegionId);\n\n    if (!state.valid) return state;\n\n    state.reconZones = regions.map((region, index) => {\n      let friendly = 0;\n      let hostile = 0;\n\n      for (const entry of standingCombatants) {\n        if (!tokenInsideRegion(entry.token, region)) continue;\n\n        if (entry.faction === \"friendly\") {\n          friendly += 1;\n        } else if (entry.faction === \"hostile\") {\n          hostile += 1;\n        }\n      }\n\n      const controller = controllerFromCounts(\n        friendly,\n        hostile\n      );\n\n      const isTrueZone = region.id === trueRegionId;\n      const scanned = scannedRegionIds.includes(region.id);\n\n      if (isTrueZone) {\n        state.reconTrueZoneController = controller;\n        state.reconTrueZoneScanned = scanned;\n      }\n\n      return {\n        id: region.id,\n        name:\n          region.name ||\n          `Objective ${String.fromCharCode(65 + index)}`,\n        friendly,\n        hostile,\n        controller,\n        scanned,\n        isTrueZone\n      };\n    });\n\n    return state;\n  }\n\n  if (sitrep.type === \"holdout\") {\n    const region = regionFor(combat, sitrep);",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "function renderExtractionState(sitrep, state) {",
-      "replace": "function renderHoldoutState(sitrep, state) {\n  const scoreStatus =\n    state.holdoutScore >= 1\n      ? \"POSITION HOLDING\"\n      : \"POSITION OVERRUN\";\n\n  const scoreClass =\n    state.holdoutScore >= 1\n      ? \"holding\"\n      : \"overrun\";\n\n  return `\n    <div class=\"lst-zone-name\">\n      <i class=\"fas fa-shield-alt\"></i>\n      ${esc(state.regionName)}\n    </div>\n\n    <div class=\"lst-holdout-status lst-holdout-${scoreClass}\">\n      ${scoreStatus}\n    </div>\n\n    <div class=\"lst-holdout-scoreboard\">\n      <span>PROJECTED SCORE</span>\n      <strong>${state.holdoutScore}</strong>\n      <small>\n        ${state.holdoutBaseScore} starting points\n        − ${state.hostileInZone} enemies in zone\n      </small>\n    </div>\n\n    <div class=\"lst-holdout-grid\">\n      <div class=\"lst-holdout-stat hostile\">\n        <span>ENEMIES IN ZONE</span>\n        <strong>${state.hostileInZone}</strong>\n      </div>\n\n      <div class=\"lst-holdout-stat allied\">\n        <span>ALLIES IN ZONE</span>\n        <strong>${state.friendlyInZone}</strong>\n      </div>\n\n      <div class=\"lst-holdout-stat allied\">\n        <span>ALLIES STANDING</span>\n        <strong>${state.friendlyStanding}</strong>\n      </div>\n\n      <div class=\"lst-holdout-stat hostile\">\n        <span>HOSTILES STANDING</span>\n        <strong>${state.hostileStanding}</strong>\n      </div>\n    </div>\n  `;\n}\n\nfunction renderExtractionState(sitrep, state) {",
+      "find": "function renderHoldoutState(sitrep, state) {",
+      "replace": "function renderReconState(sitrep, state) {\n  const zones = state.reconZones\n    .map(\n      (zone, index) => {\n        let scanResult = \"UNSCANNED\";\n        let scanClass = \"unscanned\";\n\n        if (zone.scanned && zone.isTrueZone) {\n          scanResult = \"TRUE CZ\";\n          scanClass = \"true\";\n        } else if (zone.scanned) {\n          scanResult = \"FALSE CZ\";\n          scanClass = \"false\";\n        }\n\n        return `\n          <div class=\"lst-recon-zone lst-zone-${esc(zone.controller)}\">\n            <div class=\"lst-recon-zone-heading\">\n              <span>\n                OBJECTIVE ${String.fromCharCode(65 + index)}\n              </span>\n\n              <strong>${esc(zone.name)}</strong>\n            </div>\n\n            <div class=\"lst-recon-scan lst-recon-scan-${scanClass}\">\n              ${scanResult}\n            </div>\n\n            <div class=\"lst-recon-control\">\n              ${controlZoneLabel(zone.controller)} CONTROL\n            </div>\n\n            <div class=\"lst-recon-counts\">\n              <span class=\"allied\">\n                ${zone.friendly} ALLIED\n              </span>\n\n              <span class=\"hostile\">\n                ${zone.hostile} HOSTILE\n              </span>\n            </div>\n\n            ${\n              game.user.isGM && !zone.scanned\n                ? `\n                  <button\n                    type=\"button\"\n                    class=\"lst-recon-scan-button\"\n                    data-action=\"recon-scan\"\n                    data-region-id=\"${esc(zone.id)}\"\n                  >\n                    Record Scan\n                  </button>\n                `\n                : \"\"\n            }\n          </div>\n        `;\n      }\n    )\n    .join(\"\");\n\n  const trueZoneStatus = state.reconTrueZoneScanned\n    ? state.reconTrueZoneController === \"friendly\"\n      ? \"TRUE CZ SECURED\"\n      : state.reconTrueZoneController === \"hostile\"\n        ? \"TRUE CZ HOSTILE\"\n        : \"TRUE CZ CONTESTED\"\n    : \"TRUE CZ UNKNOWN\";\n\n  const trueZoneClass = state.reconTrueZoneScanned\n    ? state.reconTrueZoneController\n    : \"unknown\";\n\n  return `\n    <div class=\"lst-recon-summary lst-recon-summary-${trueZoneClass}\">\n      ${trueZoneStatus}\n    </div>\n\n    <div class=\"lst-recon-zone-grid\">\n      ${zones}\n    </div>\n\n    <div class=\"lst-recon-note\">\n      A character inside a Control Zone may use a full action\n      to scan it. The GM then records the scan result here.\n    </div>\n  `;\n}\n\nfunction renderHoldoutState(sitrep, state) {",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "              : sitrep.type === \"extraction\"\n                ? renderExtractionState(sitrep, state)\n                : `",
-      "replace": "              : sitrep.type === \"extraction\"\n                ? renderExtractionState(sitrep, state)\n                : sitrep.type === \"holdout\"\n                  ? renderHoldoutState(sitrep, state)\n                  : `",
+      "find": "                : sitrep.type === \"holdout\"\n                  ? renderHoldoutState(sitrep, state)\n                  : `",
+      "replace": "                : sitrep.type === \"holdout\"\n                  ? renderHoldoutState(sitrep, state)\n                  : sitrep.type === \"recon\"\n                    ? renderReconState(sitrep, state)\n                    : `",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "                    : sitrep.type === \"extraction\"\n                      ? \"Extraction requires a valid Objective combatant and Extraction Zone Region.\"\n                      : \"The configured Region cannot be found on this combat's Scene.\"",
-      "replace": "                    : sitrep.type === \"extraction\"\n                      ? \"Extraction requires a valid Objective combatant and Extraction Zone Region.\"\n                      : sitrep.type === \"holdout\"\n                        ? \"Holdout requires a valid Control Zone Region.\"\n                        : \"The configured Region cannot be found on this combat's Scene.\"",
+      "find": "                      : sitrep.type === \"holdout\"\n                        ? \"Holdout requires a valid Control Zone Region.\"\n                        : \"The configured Region cannot be found on this combat's Scene.\"",
+      "replace": "                      : sitrep.type === \"holdout\"\n                        ? \"Holdout requires a valid Control Zone Region.\"\n                        : sitrep.type === \"recon\"\n                          ? \"Recon requires exactly four valid Control Zone Regions and one designated True Control Zone.\"\n                          : \"The configured Region cannot be found on this combat's Scene.\"",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "      (sitrepType === \"control\" ? 6 : 8)",
-      "replace": "      (\n        sitrepType === \"control\" ||\n        sitrepType === \"holdout\"\n          ? 6\n          : sitrepType === \"extraction\"\n            ? 10\n            : 8\n      )",
+      "find": "  hud\n    .querySelector('[data-action=\"extraction-extract\"]')",
+      "replace": "  hud\n    .querySelectorAll('[data-action=\"recon-scan\"]')\n    .forEach(button => {\n      button.addEventListener(\"click\", () => {\n        const regionId = String(\n          button.dataset.regionId ?? \"\"\n        );\n\n        recordReconScan(regionId);\n      });\n    });\n\n  hud\n    .querySelector('[data-action=\"extraction-extract\"]')",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "    extractionStatus: \"active\",\n\n    title: String(",
-      "replace": "    extractionStatus: \"active\",\n\n    holdoutBaseScore:\n      sitrepType === \"holdout\"\n        ? 4\n        : Number(DEFAULTS.holdoutBaseScore ?? 4),\n\n    title: String(",
+      "find": "async function resolveExtractionObjective(outcome) {",
+      "replace": "async function recordReconScan(regionId) {\n  const combat = activeCombat();\n  const sitrep = getSitrep(combat);\n\n  if (\n    !game.user.isGM ||\n    !combat ||\n    !sitrep ||\n    sitrep.type !== \"recon\" ||\n    !regionId\n  ) {\n    return;\n  }\n\n  const validRegionIds = Array.isArray(sitrep.reconRegionIds)\n    ? sitrep.reconRegionIds\n    : [];\n\n  if (!validRegionIds.includes(regionId)) {\n    ui.notifications.error(\n      \"That Region is not one of this Recon sitrep's Control Zones.\"\n    );\n\n    return;\n  }\n\n  const scannedRegionIds = Array.isArray(\n    sitrep.reconScannedRegionIds\n  )\n    ? [...sitrep.reconScannedRegionIds]\n    : [];\n\n  if (scannedRegionIds.includes(regionId)) {\n    return;\n  }\n\n  scannedRegionIds.push(regionId);\n\n  await combat.setFlag(MODULE_ID, FLAG_KEY, {\n    ...sitrep,\n    reconScannedRegionIds: scannedRegionIds\n  });\n\n  const scene = combat.scene ?? canvas.scene;\n  const region = scene?.regions?.get(regionId);\n  const isTrueZone = regionId === sitrep.reconTrueRegionId;\n\n  if (isPrimaryGM()) {\n    await ChatMessage.create({\n      speaker: {\n        alias: \"MISSION CONTROL\"\n      },\n      content: `\n        <div class=\"lst-chat-result ${\n          isTrueZone ? \"victory\" : \"\"\n        }\">\n          <strong>\n            ${esc(region?.name || \"Control Zone\")} SCANNED\n          </strong>\n          <br>\n          ${isTrueZone ? \"TRUE CONTROL ZONE\" : \"FALSE CONTROL ZONE\"}\n        </div>\n      `\n    });\n  }\n}\n\nasync function resolveExtractionObjective(outcome) {",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "            roundLimitInput.value = isControl\n              ? \"6\"\n              : isExtraction\n                ? \"10\"\n                : \"8\";",
-      "replace": "            const isHoldout =\n              typeSelect?.value === \"holdout\";\n\n            roundLimitInput.value =\n              isControl || isHoldout\n                ? \"6\"\n                : isExtraction\n                  ? \"10\"\n                  : \"8\";",
+      "find": "  const extractionObjectiveOptions = [...(combat.combatants ?? [])]\n    .map(\n      combatant => `",
+      "replace": "  const selectedReconRegionIds = Array.isArray(\n    existing?.reconRegionIds\n  )\n    ? existing.reconRegionIds\n    : [];\n\n  const reconRegionOptions = regions\n    .map(\n      region => `\n        <option\n          value=\"${esc(region.id)}\"\n          ${\n            selectedReconRegionIds.includes(region.id)\n              ? \"selected\"\n              : \"\"\n          }\n        >\n          ${esc(region.name || region.id)}\n        </option>\n      `\n    )\n    .join(\"\");\n\n  const reconTrueRegionOptions = regions\n    .map(\n      region => `\n        <option\n          value=\"${esc(region.id)}\"\n          ${\n            existing?.reconTrueRegionId === region.id\n              ? \"selected\"\n              : \"\"\n          }\n        >\n          ${esc(region.name || region.id)}\n        </option>\n      `\n    )\n    .join(\"\");\n\n  const extractionObjectiveOptions = [...(combat.combatants ?? [])]\n    .map(\n      combatant => `",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "  if (sitrep.type === \"extraction\") {\n    if (state.objectiveDestroyed) {",
-      "replace": "  if (sitrep.type === \"holdout\") {\n    if (\n      roundChanged &&\n      Number(changes.round) > Number(sitrep.finalRound)\n    ) {\n      const finalScore = Number(state.holdoutScore);\n\n      if (finalScore >= 1) {\n        await setResult(\n          \"victory\",\n          `The allies held the zone through round ${sitrep.finalRound} with a final score of ${finalScore}.`\n        );\n      } else {\n        const captureWarning =\n          state.friendlyStanding > 0\n            ? \" Any allied units still on the battlefield are captured or overrun.\"\n            : \"\";\n\n        await setResult(\n          \"defeat\",\n          `The position was overrun at the end of round ${sitrep.finalRound}. Final score: ${finalScore}.${captureWarning}`\n        );\n      }\n    }\n\n    return;\n  }\n\n  if (sitrep.type === \"extraction\") {\n    if (state.objectiveDestroyed) {",
+      "find": "      <div class=\"lst-extraction-fields\" style=\"display: none;\">",
+      "replace": "      <div class=\"lst-recon-fields\" style=\"display: none;\">\n        <div class=\"form-group\">\n          <label>Recon Control Zones</label>\n\n          <select name=\"reconRegionIds\" multiple size=\"6\">\n            ${reconRegionOptions}\n          </select>\n\n          <p class=\"notes\">\n            Select exactly four Scene Regions. Hold Ctrl while\n            clicking to select multiple Regions.\n          </p>\n        </div>\n\n        <div class=\"form-group\">\n          <label>True Control Zone</label>\n\n          <select name=\"reconTrueRegionId\">\n            <option value=\"\">\n              — Secretly select the True CZ —\n            </option>\n\n            ${reconTrueRegionOptions}\n          </select>\n\n          <p class=\"notes\">\n            Only the GM sees this setup field. The selected zone\n            remains hidden from players until it is scanned.\n          </p>\n        </div>\n      </div>\n\n      <div class=\"lst-extraction-fields\" style=\"display: none;\">",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "  const extractionZoneRegionId = String(\n    formData.get(\"extractionZoneRegionId\") ?? \"\"\n  );",
+      "replace": "  const extractionZoneRegionId = String(\n    formData.get(\"extractionZoneRegionId\") ?? \"\"\n  );\n\n  const reconRegionIds = formData\n    .getAll(\"reconRegionIds\")\n    .map(String);\n\n  const reconTrueRegionId = String(\n    formData.get(\"reconTrueRegionId\") ?? \"\"\n  );",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "  } else if (sitrepType === \"extraction\") {\n    if (!extractionObjectiveCombatantId) {",
+      "replace": "  } else if (sitrepType === \"recon\") {\n    if (reconRegionIds.length !== 4) {\n      ui.notifications.error(\n        \"Recon requires exactly four selected Control Zone Regions.\"\n      );\n\n      return false;\n    }\n\n    if (!reconTrueRegionId) {\n      ui.notifications.error(\n        \"Recon requires one secretly designated True Control Zone.\"\n      );\n\n      return false;\n    }\n\n    if (!reconRegionIds.includes(reconTrueRegionId)) {\n      ui.notifications.error(\n        \"The True Control Zone must be one of the four selected Recon Regions.\"\n      );\n\n      return false;\n    }\n  } else if (sitrepType === \"extraction\") {\n    if (!extractionObjectiveCombatantId) {",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "    holdoutBaseScore:\n      sitrepType === \"holdout\"\n        ? 4\n        : Number(DEFAULTS.holdoutBaseScore ?? 4),\n\n    title: String(",
+      "replace": "    holdoutBaseScore:\n      sitrepType === \"holdout\"\n        ? 4\n        : Number(DEFAULTS.holdoutBaseScore ?? 4),\n\n    reconRegionIds:\n      sitrepType === \"recon\"\n        ? reconRegionIds\n        : [],\n\n    reconTrueRegionId:\n      sitrepType === \"recon\"\n        ? reconTrueRegionId\n        : \"\",\n\n    reconScannedRegionIds: [],\n\n    title: String(",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "        const extractionFields = root.querySelector(\".lst-extraction-fields\");\n\n        const updateSitrepFields = () => {\n          const isControl = typeSelect?.value === \"control\";\n          const isEscort = typeSelect?.value === \"escort\";\n          const isExtraction = typeSelect?.value === \"extraction\";\n          const usesSingleRegion =\n            !isControl &&\n            !isEscort &&\n            !isExtraction;",
+      "replace": "        const extractionFields = root.querySelector(\".lst-extraction-fields\");\n        const reconFields = root.querySelector(\".lst-recon-fields\");\n\n        const updateSitrepFields = () => {\n          const isControl = typeSelect?.value === \"control\";\n          const isEscort = typeSelect?.value === \"escort\";\n          const isExtraction = typeSelect?.value === \"extraction\";\n          const isRecon = typeSelect?.value === \"recon\";\n          const usesSingleRegion =\n            !isControl &&\n            !isEscort &&\n            !isExtraction &&\n            !isRecon;",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "          if (extractionFields) {\n            extractionFields.style.display = isExtraction ? \"\" : \"none\";\n          }\n\n          if (roundLimitInput && !existing) {",
+      "replace": "          if (extractionFields) {\n            extractionFields.style.display = isExtraction ? \"\" : \"none\";\n          }\n\n          if (reconFields) {\n            reconFields.style.display = isRecon ? \"\" : \"none\";\n          }\n\n          if (roundLimitInput && !existing) {",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "              isControl || isHoldout\n                ? \"6\"\n                : isExtraction",
+      "replace": "              isControl || isHoldout || isRecon\n                ? \"6\"\n                : isExtraction",
+      "expected_matches": 1
+    },
+    {
+      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
+      "operation": "replace",
+      "find": "  if (sitrep.type === \"holdout\") {\n    if (\n      roundChanged &&",
+      "replace": "  if (sitrep.type === \"recon\") {\n    if (\n      roundChanged &&\n      Number(changes.round) > Number(sitrep.finalRound)\n    ) {\n      const trueZone = state.reconZones.find(\n        zone => zone.isTrueZone\n      );\n\n      const alliesControlTrueZone =\n        trueZone?.controller === \"friendly\" &&\n        Number(trueZone?.friendly ?? 0) > 0 &&\n        Number(trueZone?.hostile ?? 0) === 0;\n\n      if (alliesControlTrueZone) {\n        await setResult(\n          \"victory\",\n          `The allies controlled the True Control Zone at the end of round ${sitrep.finalRound}.`\n        );\n      } else {\n        const trueZoneStatus = trueZone\n          ? controlZoneLabel(trueZone.controller).toLowerCase()\n          : \"unresolved\";\n\n        await setResult(\n          \"defeat\",\n          `The allies did not control the True Control Zone at the end of round ${sitrep.finalRound}. Its final status was ${trueZoneStatus}.`\n        );\n      }\n    }\n\n    return;\n  }\n\n  if (sitrep.type === \"holdout\") {\n    if (\n      roundChanged &&",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/styles/lancer-sitrep-tracker.css",
       "operation": "append",
-      "content": "\n/* ==========================================================\n   Holdout Sitrep\n   ========================================================== */\n\n#lancer-sitrep-hud .lst-holdout-status {\n  margin: 4px 14px 9px;\n  padding: 7px;\n  border: 1px solid currentColor;\n  color: var(--lst-gold);\n  font-size: 12px;\n  font-weight: 800;\n  text-align: center;\n}\n\n#lancer-sitrep-hud .lst-holdout-holding {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-holdout-overrun {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-holdout-scoreboard {\n  display: grid;\n  grid-template-columns: 1fr auto;\n  align-items: center;\n  gap: 3px 12px;\n  padding: 10px 14px;\n  border-top: 1px solid rgba(255, 255, 255, 0.08);\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n  background: rgba(21, 152, 209, 0.07);\n}\n\n#lancer-sitrep-hud .lst-holdout-scoreboard > span {\n  color: #93a8b5;\n  font-size: 9px;\n}\n\n#lancer-sitrep-hud .lst-holdout-scoreboard > strong {\n  grid-row: span 2;\n  color: var(--lst-cyan);\n  font-size: 30px;\n  line-height: 1;\n}\n\n#lancer-sitrep-hud .lst-holdout-overrun + .lst-holdout-scoreboard > strong {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-holdout-scoreboard > small {\n  color: #b5c8d2;\n  font-size: 8px;\n}\n\n#lancer-sitrep-hud .lst-holdout-grid {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n}\n\n#lancer-sitrep-hud .lst-holdout-stat {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 9px 11px;\n  border-right: 1px solid rgba(255, 255, 255, 0.08);\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-holdout-stat span {\n  color: #93a8b5;\n  font-size: 8px;\n}\n\n#lancer-sitrep-hud .lst-holdout-stat strong {\n  color: white;\n  font-size: 18px;\n}\n\n#lancer-sitrep-hud .lst-holdout-stat.allied strong {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-holdout-stat.hostile strong {\n  color: var(--lst-red);\n}\n"
+      "content": "\n/* ==========================================================\n   Recon Sitrep\n   ========================================================== */\n\n#lancer-sitrep-hud .lst-recon-summary {\n  margin: 4px 14px 9px;\n  padding: 7px;\n  border: 1px solid currentColor;\n  color: var(--lst-gold);\n  font-size: 12px;\n  font-weight: 800;\n  text-align: center;\n}\n\n#lancer-sitrep-hud .lst-recon-summary-friendly {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-recon-summary-hostile {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-recon-summary-contested,\n#lancer-sitrep-hud .lst-recon-summary-none,\n#lancer-sitrep-hud .lst-recon-summary-unknown {\n  color: var(--lst-gold);\n}\n\n#lancer-sitrep-hud .lst-recon-zone-grid {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  border-top: 1px solid rgba(255, 255, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-recon-zone {\n  min-width: 0;\n  padding: 9px 10px;\n  border-right: 1px solid rgba(255, 255, 255, 0.08);\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-recon-zone-heading span {\n  display: block;\n  color: #93a8b5;\n  font-size: 8px;\n  letter-spacing: 0.12em;\n}\n\n#lancer-sitrep-hud .lst-recon-zone-heading strong {\n  display: block;\n  overflow: hidden;\n  margin: 3px 0 5px;\n  color: white;\n  font-size: 11px;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n#lancer-sitrep-hud .lst-recon-scan {\n  padding: 4px;\n  border: 1px solid currentColor;\n  color: #93a8b5;\n  font-size: 9px;\n  font-weight: 800;\n  text-align: center;\n}\n\n#lancer-sitrep-hud .lst-recon-scan-true {\n  color: var(--lst-cyan);\n  box-shadow: inset 0 0 8px rgba(86, 228, 255, 0.15);\n}\n\n#lancer-sitrep-hud .lst-recon-scan-false {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-recon-control {\n  margin-top: 5px;\n  color: var(--lst-gold);\n  font-size: 8px;\n  font-weight: 700;\n  text-align: center;\n}\n\n#lancer-sitrep-hud .lst-zone-friendly .lst-recon-control {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-zone-hostile .lst-recon-control {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-recon-counts {\n  display: flex;\n  justify-content: space-between;\n  gap: 5px;\n  margin-top: 5px;\n  font-size: 8px;\n}\n\n#lancer-sitrep-hud .lst-recon-counts .allied {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-recon-counts .hostile {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-recon-scan-button {\n  width: 100%;\n  margin-top: 6px;\n  padding: 5px 3px;\n  border: 1px solid rgba(86, 228, 255, 0.35);\n  color: #eafaff;\n  font-size: 9px;\n  background: rgba(86, 228, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-recon-scan-button:hover {\n  border-color: var(--lst-cyan);\n  background: rgba(86, 228, 255, 0.2);\n}\n\n#lancer-sitrep-hud .lst-recon-note {\n  padding: 8px 12px;\n  color: #93a8b5;\n  font-size: 8px;\n  line-height: 1.35;\n  background: rgba(255, 255, 255, 0.035);\n}\n\n.lst-recon-fields select[multiple] {\n  min-height: 145px;\n}\n"
     }
   ]
 }
+

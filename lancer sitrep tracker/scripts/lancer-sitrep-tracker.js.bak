@@ -16,6 +16,7 @@ const DEFAULTS = {
   extractionObjectiveCombatantId: "",
   extractionZoneRegionId: "",
   extractionStatus: "active",
+  holdoutBaseScore: 4,
   scores: {
     friendly: 0,
     hostile: 0
@@ -217,7 +218,9 @@ function calculateState(
     friendlyAdjacent: 0,
     hostileAdjacent: 0,
     friendlyInExtractionZone: 0,
-    canExtractObjective: false
+    canExtractObjective: false,
+    holdoutBaseScore: Number(sitrep?.holdoutBaseScore ?? 4),
+    holdoutScore: Number(sitrep?.holdoutBaseScore ?? 4)
   };
 
   if (!combat || !sitrep) return empty;
@@ -289,6 +292,41 @@ function calculateState(
       state.friendlyZones,
       state.hostileZones
     );
+
+    return state;
+  }
+
+  if (sitrep.type === "holdout") {
+    const region = regionFor(combat, sitrep);
+
+    state.valid = Boolean(region);
+
+    if (!region) return state;
+
+    state.regionName = region.name || "Control Zone";
+
+    for (const entry of standingCombatants) {
+      if (!tokenInsideRegion(entry.token, region)) continue;
+
+      if (entry.faction === "friendly") {
+        state.friendlyInZone += 1;
+      } else if (entry.faction === "hostile") {
+        state.hostileInZone += 1;
+      }
+    }
+
+    state.controller = controllerFromCounts(
+      state.friendlyInZone,
+      state.hostileInZone
+    );
+
+    state.holdoutBaseScore = Number(
+      sitrep.holdoutBaseScore ?? 4
+    );
+
+    state.holdoutScore =
+      state.holdoutBaseScore -
+      state.hostileInZone;
 
     return state;
   }
@@ -499,6 +537,60 @@ function controlZoneLabel(controller) {
   if (controller === "friendly") return "ALLIED";
   if (controller === "hostile") return "HOSTILE";
   return "CONTESTED";
+}
+
+function renderHoldoutState(sitrep, state) {
+  const scoreStatus =
+    state.holdoutScore >= 1
+      ? "POSITION HOLDING"
+      : "POSITION OVERRUN";
+
+  const scoreClass =
+    state.holdoutScore >= 1
+      ? "holding"
+      : "overrun";
+
+  return `
+    <div class="lst-zone-name">
+      <i class="fas fa-shield-alt"></i>
+      ${esc(state.regionName)}
+    </div>
+
+    <div class="lst-holdout-status lst-holdout-${scoreClass}">
+      ${scoreStatus}
+    </div>
+
+    <div class="lst-holdout-scoreboard">
+      <span>PROJECTED SCORE</span>
+      <strong>${state.holdoutScore}</strong>
+      <small>
+        ${state.holdoutBaseScore} starting points
+        − ${state.hostileInZone} enemies in zone
+      </small>
+    </div>
+
+    <div class="lst-holdout-grid">
+      <div class="lst-holdout-stat hostile">
+        <span>ENEMIES IN ZONE</span>
+        <strong>${state.hostileInZone}</strong>
+      </div>
+
+      <div class="lst-holdout-stat allied">
+        <span>ALLIES IN ZONE</span>
+        <strong>${state.friendlyInZone}</strong>
+      </div>
+
+      <div class="lst-holdout-stat allied">
+        <span>ALLIES STANDING</span>
+        <strong>${state.friendlyStanding}</strong>
+      </div>
+
+      <div class="lst-holdout-stat hostile">
+        <span>HOSTILES STANDING</span>
+        <strong>${state.hostileStanding}</strong>
+      </div>
+    </div>
+  `;
 }
 
 function renderExtractionState(sitrep, state) {
@@ -1087,7 +1179,9 @@ function renderHUD() {
               ? renderEscortState(sitrep, state)
               : sitrep.type === "extraction"
                 ? renderExtractionState(sitrep, state)
-                : `
+                : sitrep.type === "holdout"
+                  ? renderHoldoutState(sitrep, state)
+                  : `
               <div class="lst-zone-name">
                 <i class="fas fa-bullseye"></i>
                 ${esc(state.regionName)}
@@ -1128,7 +1222,9 @@ function renderHUD() {
                     ? "Escort requires a valid Objective combatant and Extraction Zone Region."
                     : sitrep.type === "extraction"
                       ? "Extraction requires a valid Objective combatant and Extraction Zone Region."
-                      : "The configured Region cannot be found on this combat's Scene."
+                      : sitrep.type === "holdout"
+                        ? "Holdout requires a valid Control Zone Region."
+                        : "The configured Region cannot be found on this combat's Scene."
               }
             </div>
           `
@@ -1401,6 +1497,34 @@ async function evaluateSitrep(
     changes,
     "round"
   );
+
+  if (sitrep.type === "holdout") {
+    if (
+      roundChanged &&
+      Number(changes.round) > Number(sitrep.finalRound)
+    ) {
+      const finalScore = Number(state.holdoutScore);
+
+      if (finalScore >= 1) {
+        await setResult(
+          "victory",
+          `The allies held the zone through round ${sitrep.finalRound} with a final score of ${finalScore}.`
+        );
+      } else {
+        const captureWarning =
+          state.friendlyStanding > 0
+            ? " Any allied units still on the battlefield are captured or overrun."
+            : "";
+
+        await setResult(
+          "defeat",
+          `The position was overrun at the end of round ${sitrep.finalRound}. Final score: ${finalScore}.${captureWarning}`
+        );
+      }
+    }
+
+    return;
+  }
 
   if (sitrep.type === "extraction") {
     if (state.objectiveDestroyed) {
@@ -2189,7 +2313,14 @@ async function saveSetup(
   const roundLimit = Math.max(
     Number(
       formData.get("roundLimit") ??
-      (sitrepType === "control" ? 6 : 8)
+      (
+        sitrepType === "control" ||
+        sitrepType === "holdout"
+          ? 6
+          : sitrepType === "extraction"
+            ? 10
+            : 8
+      )
     ),
     1
   );
@@ -2239,6 +2370,11 @@ async function saveSetup(
         : "",
 
     extractionStatus: "active",
+
+    holdoutBaseScore:
+      sitrepType === "holdout"
+        ? 4
+        : Number(DEFAULTS.holdoutBaseScore ?? 4),
 
     title: String(
       formData.get("title") ||
@@ -2396,11 +2532,15 @@ function openSetupDialog() {
           }
 
           if (roundLimitInput && !existing) {
-            roundLimitInput.value = isControl
-              ? "6"
-              : isExtraction
-                ? "10"
-                : "8";
+            const isHoldout =
+              typeSelect?.value === "holdout";
+
+            roundLimitInput.value =
+              isControl || isHoldout
+                ? "6"
+                : isExtraction
+                  ? "10"
+                  : "8";
           }
         };
 

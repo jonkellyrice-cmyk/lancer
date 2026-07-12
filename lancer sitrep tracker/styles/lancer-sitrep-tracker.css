@@ -839,3 +839,138 @@
 #lancer-sitrep-hud .lst-holdout-stat.hostile strong {
   color: var(--lst-red);
 }
+
+/* ==========================================================
+   Recon Sitrep
+   ========================================================== */
+
+#lancer-sitrep-hud .lst-recon-summary {
+  margin: 4px 14px 9px;
+  padding: 7px;
+  border: 1px solid currentColor;
+  color: var(--lst-gold);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+#lancer-sitrep-hud .lst-recon-summary-friendly {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-recon-summary-hostile {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-recon-summary-contested,
+#lancer-sitrep-hud .lst-recon-summary-none,
+#lancer-sitrep-hud .lst-recon-summary-unknown {
+  color: var(--lst-gold);
+}
+
+#lancer-sitrep-hud .lst-recon-zone-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-recon-zone {
+  min-width: 0;
+  padding: 9px 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-recon-zone-heading span {
+  display: block;
+  color: #93a8b5;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+}
+
+#lancer-sitrep-hud .lst-recon-zone-heading strong {
+  display: block;
+  overflow: hidden;
+  margin: 3px 0 5px;
+  color: white;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#lancer-sitrep-hud .lst-recon-scan {
+  padding: 4px;
+  border: 1px solid currentColor;
+  color: #93a8b5;
+  font-size: 9px;
+  font-weight: 800;
+  text-align: center;
+}
+
+#lancer-sitrep-hud .lst-recon-scan-true {
+  color: var(--lst-cyan);
+  box-shadow: inset 0 0 8px rgba(86, 228, 255, 0.15);
+}
+
+#lancer-sitrep-hud .lst-recon-scan-false {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-recon-control {
+  margin-top: 5px;
+  color: var(--lst-gold);
+  font-size: 8px;
+  font-weight: 700;
+  text-align: center;
+}
+
+#lancer-sitrep-hud .lst-zone-friendly .lst-recon-control {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-zone-hostile .lst-recon-control {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-recon-counts {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 8px;
+}
+
+#lancer-sitrep-hud .lst-recon-counts .allied {
+  color: var(--lst-cyan);
+}
+
+#lancer-sitrep-hud .lst-recon-counts .hostile {
+  color: var(--lst-red);
+}
+
+#lancer-sitrep-hud .lst-recon-scan-button {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 3px;
+  border: 1px solid rgba(86, 228, 255, 0.35);
+  color: #eafaff;
+  font-size: 9px;
+  background: rgba(86, 228, 255, 0.08);
+}
+
+#lancer-sitrep-hud .lst-recon-scan-button:hover {
+  border-color: var(--lst-cyan);
+  background: rgba(86, 228, 255, 0.2);
+}
+
+#lancer-sitrep-hud .lst-recon-note {
+  padding: 8px 12px;
+  color: #93a8b5;
+  font-size: 8px;
+  line-height: 1.35;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.lst-recon-fields select[multiple] {
+  min-height: 145px;
+}
