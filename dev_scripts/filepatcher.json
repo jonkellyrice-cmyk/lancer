@@ -1,130 +1,81 @@
 {
-  "name": "Add Extraction Sitrep rules, setup, objective tracking, and HUD",
+  "name": "Add Holdout Sitrep rules, setup defaults, resolution, and HUD",
   "backup": true,
   "operations": [
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "  escortObjectiveCombatantId: \"\",\n  escortExtractionRegionId: \"\",\n  escortStatus: \"active\",\n  scores: {",
-      "replace": "  escortObjectiveCombatantId: \"\",\n  escortExtractionRegionId: \"\",\n  escortStatus: \"active\",\n  extractionObjectiveCombatantId: \"\",\n  extractionZoneRegionId: \"\",\n  extractionStatus: \"active\",\n  scores: {",
+      "find": "  extractionObjectiveCombatantId: \"\",\n  extractionZoneRegionId: \"\",\n  extractionStatus: \"active\",\n  scores: {",
+      "replace": "  extractionObjectiveCombatantId: \"\",\n  extractionZoneRegionId: \"\",\n  extractionStatus: \"active\",\n  holdoutBaseScore: 4,\n  scores: {",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "    objectiveExtracted: sitrep?.escortStatus === \"extracted\",\n    objectiveInExtraction: false,\n    friendlyAdjacent: 0,\n    hostileAdjacent: 0,\n    canExtractObjective: false",
-      "replace": "    objectiveExtracted:\n      sitrep?.escortStatus === \"extracted\" ||\n      sitrep?.extractionStatus === \"extracted\",\n    objectiveInExtraction: false,\n    friendlyAdjacent: 0,\n    hostileAdjacent: 0,\n    friendlyInExtractionZone: 0,\n    canExtractObjective: false",
+      "find": "    friendlyInExtractionZone: 0,\n    canExtractObjective: false",
+      "replace": "    friendlyInExtractionZone: 0,\n    canExtractObjective: false,\n    holdoutBaseScore: Number(sitrep?.holdoutBaseScore ?? 4),\n    holdoutScore: Number(sitrep?.holdoutBaseScore ?? 4)",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "  if (sitrep.type === \"escort\") {\n    const scene = combat?.scene ?? canvas.scene;",
-      "replace": "  if (sitrep.type === \"extraction\") {\n    const scene = combat?.scene ?? canvas.scene;\n\n    const extractionRegion = scene?.regions?.get(\n      sitrep.extractionZoneRegionId\n    ) ?? null;\n\n    const objectiveCombatant = combatantById(\n      combat,\n      sitrep.extractionObjectiveCombatantId\n    );\n\n    const objectiveToken = objectiveCombatant?.token ?? null;\n\n    state.valid = Boolean(\n      extractionRegion &&\n      objectiveCombatant &&\n      objectiveToken\n    );\n\n    if (!state.valid) return state;\n\n    state.objectiveName =\n      objectiveCombatant.name ||\n      objectiveToken.name ||\n      \"Objective\";\n\n    state.objectiveDestroyed =\n      sitrep.extractionStatus === \"destroyed\" ||\n      combatantIsDefeated(objectiveCombatant);\n\n    state.objectiveExtracted =\n      sitrep.extractionStatus === \"extracted\";\n\n    state.objectiveInExtraction =\n      !state.objectiveDestroyed &&\n      !state.objectiveExtracted &&\n      tokenInsideRegion(\n        objectiveToken,\n        extractionRegion\n      );\n\n    for (const entry of standingCombatants) {\n      if (entry.token.id === objectiveToken.id) continue;\n\n      if (\n        entry.faction === \"friendly\" &&\n        tokenInsideRegion(entry.token, extractionRegion)\n      ) {\n        state.friendlyInExtractionZone += 1;\n      }\n\n      if (!tokensAreAdjacent(entry.token, objectiveToken)) {\n        continue;\n      }\n\n      if (entry.faction === \"friendly\") {\n        state.friendlyAdjacent += 1;\n      } else if (entry.faction === \"hostile\") {\n        state.hostileAdjacent += 1;\n      }\n    }\n\n    state.canExtractObjective =\n      state.objectiveInExtraction &&\n      state.friendlyAdjacent > 0 &&\n      state.hostileAdjacent === 0 &&\n      !state.objectiveDestroyed &&\n      !state.objectiveExtracted;\n\n    return state;\n  }\n\n  if (sitrep.type === \"escort\") {\n    const scene = combat?.scene ?? canvas.scene;",
+      "find": "  if (sitrep.type === \"extraction\") {\n    const scene = combat?.scene ?? canvas.scene;",
+      "replace": "  if (sitrep.type === \"holdout\") {\n    const region = regionFor(combat, sitrep);\n\n    state.valid = Boolean(region);\n\n    if (!region) return state;\n\n    state.regionName = region.name || \"Control Zone\";\n\n    for (const entry of standingCombatants) {\n      if (!tokenInsideRegion(entry.token, region)) continue;\n\n      if (entry.faction === \"friendly\") {\n        state.friendlyInZone += 1;\n      } else if (entry.faction === \"hostile\") {\n        state.hostileInZone += 1;\n      }\n    }\n\n    state.controller = controllerFromCounts(\n      state.friendlyInZone,\n      state.hostileInZone\n    );\n\n    state.holdoutBaseScore = Number(\n      sitrep.holdoutBaseScore ?? 4\n    );\n\n    state.holdoutScore =\n      state.holdoutBaseScore -\n      state.hostileInZone;\n\n    return state;\n  }\n\n  if (sitrep.type === \"extraction\") {\n    const scene = combat?.scene ?? canvas.scene;",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "function renderEscortState(sitrep, state) {",
-      "replace": "function renderExtractionState(sitrep, state) {\n  let objectiveStatus = \"AWAITING RECOVERY\";\n  let statusClass = \"active\";\n\n  if (state.objectiveExtracted) {\n    objectiveStatus = \"OBJECTIVE EXTRACTED\";\n    statusClass = \"extracted\";\n  } else if (state.objectiveDestroyed) {\n    objectiveStatus = \"OBJECTIVE DESTROYED\";\n    statusClass = \"destroyed\";\n  } else if (state.canExtractObjective) {\n    objectiveStatus = \"READY TO EXTRACT\";\n    statusClass = \"ready\";\n  } else if (state.objectiveInExtraction) {\n    objectiveStatus = \"EXTRACTION CONTESTED\";\n    statusClass = \"contested\";\n  } else if (state.friendlyAdjacent > 0) {\n    objectiveStatus = \"OBJECTIVE SECURED\";\n    statusClass = \"secured\";\n  }\n\n  return `\n    <div class=\"lst-extraction-objective\">\n      <span>OBJECTIVE</span>\n      <strong>${esc(state.objectiveName)}</strong>\n    </div>\n\n    <div class=\"lst-extraction-status lst-extraction-${statusClass}\">\n      ${objectiveStatus}\n    </div>\n\n    <div class=\"lst-extraction-grid\">\n      <div class=\"lst-extraction-stat\">\n        <span>OBJECTIVE IN EZ</span>\n        <strong>${state.objectiveInExtraction ? \"YES\" : \"NO\"}</strong>\n      </div>\n\n      <div class=\"lst-extraction-stat allied\">\n        <span>ALLIES IN EZ</span>\n        <strong>${state.friendlyInExtractionZone}</strong>\n      </div>\n\n      <div class=\"lst-extraction-stat allied\">\n        <span>ADJACENT ALLIES</span>\n        <strong>${state.friendlyAdjacent}</strong>\n      </div>\n\n      <div class=\"lst-extraction-stat hostile\">\n        <span>ADJACENT HOSTILES</span>\n        <strong>${state.hostileAdjacent}</strong>\n      </div>\n    </div>\n  `;\n}\n\nfunction renderEscortState(sitrep, state) {",
+      "find": "function renderExtractionState(sitrep, state) {",
+      "replace": "function renderHoldoutState(sitrep, state) {\n  const scoreStatus =\n    state.holdoutScore >= 1\n      ? \"POSITION HOLDING\"\n      : \"POSITION OVERRUN\";\n\n  const scoreClass =\n    state.holdoutScore >= 1\n      ? \"holding\"\n      : \"overrun\";\n\n  return `\n    <div class=\"lst-zone-name\">\n      <i class=\"fas fa-shield-alt\"></i>\n      ${esc(state.regionName)}\n    </div>\n\n    <div class=\"lst-holdout-status lst-holdout-${scoreClass}\">\n      ${scoreStatus}\n    </div>\n\n    <div class=\"lst-holdout-scoreboard\">\n      <span>PROJECTED SCORE</span>\n      <strong>${state.holdoutScore}</strong>\n      <small>\n        ${state.holdoutBaseScore} starting points\n        − ${state.hostileInZone} enemies in zone\n      </small>\n    </div>\n\n    <div class=\"lst-holdout-grid\">\n      <div class=\"lst-holdout-stat hostile\">\n        <span>ENEMIES IN ZONE</span>\n        <strong>${state.hostileInZone}</strong>\n      </div>\n\n      <div class=\"lst-holdout-stat allied\">\n        <span>ALLIES IN ZONE</span>\n        <strong>${state.friendlyInZone}</strong>\n      </div>\n\n      <div class=\"lst-holdout-stat allied\">\n        <span>ALLIES STANDING</span>\n        <strong>${state.friendlyStanding}</strong>\n      </div>\n\n      <div class=\"lst-holdout-stat hostile\">\n        <span>HOSTILES STANDING</span>\n        <strong>${state.hostileStanding}</strong>\n      </div>\n    </div>\n  `;\n}\n\nfunction renderExtractionState(sitrep, state) {",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "            : sitrep.type === \"escort\"\n              ? renderEscortState(sitrep, state)\n              : `",
-      "replace": "            : sitrep.type === \"escort\"\n              ? renderEscortState(sitrep, state)\n              : sitrep.type === \"extraction\"\n                ? renderExtractionState(sitrep, state)\n                : `",
+      "find": "              : sitrep.type === \"extraction\"\n                ? renderExtractionState(sitrep, state)\n                : `",
+      "replace": "              : sitrep.type === \"extraction\"\n                ? renderExtractionState(sitrep, state)\n                : sitrep.type === \"holdout\"\n                  ? renderHoldoutState(sitrep, state)\n                  : `",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "                  : sitrep.type === \"escort\"\n                    ? \"Escort requires a valid Objective combatant and Extraction Zone Region.\"\n                    : \"The configured Region cannot be found on this combat's Scene.\"",
-      "replace": "                  : sitrep.type === \"escort\"\n                    ? \"Escort requires a valid Objective combatant and Extraction Zone Region.\"\n                    : sitrep.type === \"extraction\"\n                      ? \"Extraction requires a valid Objective combatant and Extraction Zone Region.\"\n                      : \"The configured Region cannot be found on this combat's Scene.\"",
+      "find": "                    : sitrep.type === \"extraction\"\n                      ? \"Extraction requires a valid Objective combatant and Extraction Zone Region.\"\n                      : \"The configured Region cannot be found on this combat's Scene.\"",
+      "replace": "                    : sitrep.type === \"extraction\"\n                      ? \"Extraction requires a valid Objective combatant and Extraction Zone Region.\"\n                      : sitrep.type === \"holdout\"\n                        ? \"Holdout requires a valid Control Zone Region.\"\n                        : \"The configured Region cannot be found on this combat's Scene.\"",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "      ${\n        game.user.isGM && sitrep.type === \"escort\"\n          ? `",
-      "replace": "      ${\n        game.user.isGM && sitrep.type === \"extraction\"\n          ? `\n            <div class=\"lst-extraction-controls\">\n              <button\n                type=\"button\"\n                data-action=\"extraction-extract\"\n                ${\n                  !state.canExtractObjective ||\n                  state.objectiveDestroyed ||\n                  state.objectiveExtracted\n                    ? \"disabled\"\n                    : \"\"\n                }\n              >\n                Extract Objective\n              </button>\n\n              <button\n                type=\"button\"\n                data-action=\"extraction-destroy\"\n                ${\n                  state.objectiveDestroyed ||\n                  state.objectiveExtracted\n                    ? \"disabled\"\n                    : \"\"\n                }\n              >\n                Destroy Objective\n              </button>\n            </div>\n          `\n          : \"\"\n      }\n\n      ${\n        game.user.isGM && sitrep.type === \"escort\"\n          ? `",
+      "find": "      (sitrepType === \"control\" ? 6 : 8)",
+      "replace": "      (\n        sitrepType === \"control\" ||\n        sitrepType === \"holdout\"\n          ? 6\n          : sitrepType === \"extraction\"\n            ? 10\n            : 8\n      )",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "  hud\n    .querySelector('[data-action=\"escort-extract\"]')",
-      "replace": "  hud\n    .querySelector('[data-action=\"extraction-extract\"]')\n    ?.addEventListener(\n      \"click\",\n      () => resolveExtractionObjective(\"extracted\")\n    );\n\n  hud\n    .querySelector('[data-action=\"extraction-destroy\"]')\n    ?.addEventListener(\n      \"click\",\n      () => resolveExtractionObjective(\"destroyed\")\n    );\n\n  hud\n    .querySelector('[data-action=\"escort-extract\"]')",
+      "find": "    extractionStatus: \"active\",\n\n    title: String(",
+      "replace": "    extractionStatus: \"active\",\n\n    holdoutBaseScore:\n      sitrepType === \"holdout\"\n        ? 4\n        : Number(DEFAULTS.holdoutBaseScore ?? 4),\n\n    title: String(",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "async function resolveEscortObjective(outcome) {",
-      "replace": "async function resolveExtractionObjective(outcome) {\n  const combat = activeCombat();\n  const sitrep = getSitrep(combat);\n\n  if (\n    !game.user.isGM ||\n    !combat ||\n    !sitrep ||\n    sitrep.type !== \"extraction\"\n  ) {\n    return;\n  }\n\n  if (outcome === \"extracted\") {\n    const state = calculateState(combat, sitrep);\n\n    if (!state.canExtractObjective) {\n      ui.notifications.warn(\n        \"The Objective cannot currently be extracted. It must be inside the Extraction Zone, adjacent to an allied unit, and uncontested.\"\n      );\n\n      return;\n    }\n\n    await combat.setFlag(MODULE_ID, FLAG_KEY, {\n      ...sitrep,\n      extractionStatus: \"extracted\"\n    });\n\n    await setResult(\n      \"victory\",\n      \"The Objective was safely recovered and extracted.\"\n    );\n\n    return;\n  }\n\n  if (outcome === \"destroyed\") {\n    const updatedSitrep = {\n      ...sitrep,\n      extractionStatus: \"destroyed\",\n      status: \"draw\",\n      resultReason:\n        \"The Objective was destroyed. Neither side achieved victory.\"\n    };\n\n    await combat.setFlag(\n      MODULE_ID,\n      FLAG_KEY,\n      updatedSitrep\n    );\n\n    if (isPrimaryGM()) {\n      await ChatMessage.create({\n        speaker: {\n          alias: \"MISSION CONTROL\"\n        },\n        content: `\n          <div class=\"lst-chat-result\">\n            <strong>NO VICTOR</strong>\n            <br>\n            The Objective was destroyed.\n          </div>\n        `\n      });\n    }\n  }\n}\n\nasync function resolveEscortObjective(outcome) {",
+      "find": "            roundLimitInput.value = isControl\n              ? \"6\"\n              : isExtraction\n                ? \"10\"\n                : \"8\";",
+      "replace": "            const isHoldout =\n              typeSelect?.value === \"holdout\";\n\n            roundLimitInput.value =\n              isControl || isHoldout\n                ? \"6\"\n                : isExtraction\n                  ? \"10\"\n                  : \"8\";",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
       "operation": "replace",
-      "find": "  const escortObjectiveOptions = [...(combat.combatants ?? [])]\n    .map(\n      combatant => `\n        <option\n          value=\"${esc(combatant.id)}\"\n          ${\n            existing?.escortObjectiveCombatantId === combatant.id\n              ? \"selected\"\n              : \"\"\n          }\n        >\n          ${esc(combatant.name || combatant.token?.name || combatant.id)}\n        </option>\n      `\n    )\n    .join(\"\");",
-      "replace": "  const escortObjectiveOptions = [...(combat.combatants ?? [])]\n    .map(\n      combatant => `\n        <option\n          value=\"${esc(combatant.id)}\"\n          ${\n            existing?.escortObjectiveCombatantId === combatant.id\n              ? \"selected\"\n              : \"\"\n          }\n        >\n          ${esc(combatant.name || combatant.token?.name || combatant.id)}\n        </option>\n      `\n    )\n    .join(\"\");\n\n  const extractionZoneOptions = regions\n    .map(\n      region => `\n        <option\n          value=\"${esc(region.id)}\"\n          ${\n            existing?.extractionZoneRegionId === region.id\n              ? \"selected\"\n              : \"\"\n          }\n        >\n          ${esc(region.name || region.id)}\n        </option>\n      `\n    )\n    .join(\"\");\n\n  const extractionObjectiveOptions = [...(combat.combatants ?? [])]\n    .map(\n      combatant => `\n        <option\n          value=\"${esc(combatant.id)}\"\n          ${\n            existing?.extractionObjectiveCombatantId === combatant.id\n              ? \"selected\"\n              : \"\"\n          }\n        >\n          ${esc(combatant.name || combatant.token?.name || combatant.id)}\n        </option>\n      `\n    )\n    .join(\"\");",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
-      "operation": "replace",
-      "find": "      <div class=\"lst-escort-fields\" style=\"display: none;\">\n        <div class=\"form-group\">",
-      "replace": "      <div class=\"lst-extraction-fields\" style=\"display: none;\">\n        <div class=\"form-group\">\n          <label>Objective combatant</label>\n\n          <select name=\"extractionObjectiveCombatantId\">\n            <option value=\"\">\n              — Select the Objective —\n            </option>\n\n            ${extractionObjectiveOptions}\n          </select>\n\n          <p class=\"notes\">\n            Add the Objective token to the Combat Tracker, then select it here.\n          </p>\n        </div>\n\n        <div class=\"form-group\">\n          <label>Extraction Zone</label>\n\n          <select name=\"extractionZoneRegionId\">\n            <option value=\"\">\n              — Select the Extraction Zone —\n            </option>\n\n            ${extractionZoneOptions}\n          </select>\n\n          <p class=\"notes\">\n            The Objective must reach this Region while adjacent to an allied unit and uncontested.\n          </p>\n        </div>\n      </div>\n\n      <div class=\"lst-escort-fields\" style=\"display: none;\">\n        <div class=\"form-group\">",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
-      "operation": "replace",
-      "find": "  const escortExtractionRegionId = String(\n    formData.get(\"escortExtractionRegionId\") ?? \"\"\n  );",
-      "replace": "  const escortExtractionRegionId = String(\n    formData.get(\"escortExtractionRegionId\") ?? \"\"\n  );\n\n  const extractionObjectiveCombatantId = String(\n    formData.get(\"extractionObjectiveCombatantId\") ?? \"\"\n  );\n\n  const extractionZoneRegionId = String(\n    formData.get(\"extractionZoneRegionId\") ?? \"\"\n  );",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
-      "operation": "replace",
-      "find": "  } else if (sitrepType === \"escort\") {\n    if (!escortObjectiveCombatantId) {",
-      "replace": "  } else if (sitrepType === \"extraction\") {\n    if (!extractionObjectiveCombatantId) {\n      ui.notifications.error(\n        \"Extraction requires an Objective combatant.\"\n      );\n\n      return false;\n    }\n\n    if (!extractionZoneRegionId) {\n      ui.notifications.error(\n        \"Extraction requires an Extraction Zone Region.\"\n      );\n\n      return false;\n    }\n  } else if (sitrepType === \"escort\") {\n    if (!escortObjectiveCombatantId) {",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
-      "operation": "replace",
-      "find": "    escortStatus: \"active\",\n\n    title: String(",
-      "replace": "    escortStatus: \"active\",\n\n    extractionObjectiveCombatantId:\n      sitrepType === \"extraction\"\n        ? extractionObjectiveCombatantId\n        : \"\",\n\n    extractionZoneRegionId:\n      sitrepType === \"extraction\"\n        ? extractionZoneRegionId\n        : \"\",\n\n    extractionStatus: \"active\",\n\n    title: String(",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
-      "operation": "replace",
-      "find": "        const escortFields = root.querySelector(\".lst-escort-fields\");\n\n        const updateSitrepFields = () => {\n          const isControl = typeSelect?.value === \"control\";\n          const isEscort = typeSelect?.value === \"escort\";\n          const usesSingleRegion = !isControl && !isEscort;",
-      "replace": "        const escortFields = root.querySelector(\".lst-escort-fields\");\n        const extractionFields = root.querySelector(\".lst-extraction-fields\");\n\n        const updateSitrepFields = () => {\n          const isControl = typeSelect?.value === \"control\";\n          const isEscort = typeSelect?.value === \"escort\";\n          const isExtraction = typeSelect?.value === \"extraction\";\n          const usesSingleRegion =\n            !isControl &&\n            !isEscort &&\n            !isExtraction;",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
-      "operation": "replace",
-      "find": "          if (escortFields) {\n            escortFields.style.display = isEscort ? \"\" : \"none\";\n          }\n\n          if (roundLimitInput && !existing) {\n            roundLimitInput.value = isControl ? \"6\" : \"8\";\n          }",
-      "replace": "          if (escortFields) {\n            escortFields.style.display = isEscort ? \"\" : \"none\";\n          }\n\n          if (extractionFields) {\n            extractionFields.style.display = isExtraction ? \"\" : \"none\";\n          }\n\n          if (roundLimitInput && !existing) {\n            roundLimitInput.value = isControl\n              ? \"6\"\n              : isExtraction\n                ? \"10\"\n                : \"8\";\n          }",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/lancer-sitrep-tracker.js",
-      "operation": "replace",
-      "find": "  if (sitrep.type === \"escort\") {\n    if (state.objectiveDestroyed) {",
-      "replace": "  if (sitrep.type === \"extraction\") {\n    if (state.objectiveDestroyed) {\n      if (sitrep.extractionStatus !== \"destroyed\") {\n        await resolveExtractionObjective(\"destroyed\");\n      }\n\n      return;\n    }\n\n    if (\n      roundChanged &&\n      Number(changes.round) > Number(sitrep.finalRound)\n    ) {\n      await setResult(\n        \"defeat\",\n        `The Objective was not extracted by the end of round ${sitrep.finalRound}. Any allied units remaining on the battlefield are captured or overrun.`\n      );\n    }\n\n    return;\n  }\n\n  if (sitrep.type === \"escort\") {\n    if (state.objectiveDestroyed) {",
+      "find": "  if (sitrep.type === \"extraction\") {\n    if (state.objectiveDestroyed) {",
+      "replace": "  if (sitrep.type === \"holdout\") {\n    if (\n      roundChanged &&\n      Number(changes.round) > Number(sitrep.finalRound)\n    ) {\n      const finalScore = Number(state.holdoutScore);\n\n      if (finalScore >= 1) {\n        await setResult(\n          \"victory\",\n          `The allies held the zone through round ${sitrep.finalRound} with a final score of ${finalScore}.`\n        );\n      } else {\n        const captureWarning =\n          state.friendlyStanding > 0\n            ? \" Any allied units still on the battlefield are captured or overrun.\"\n            : \"\";\n\n        await setResult(\n          \"defeat\",\n          `The position was overrun at the end of round ${sitrep.finalRound}. Final score: ${finalScore}.${captureWarning}`\n        );\n      }\n    }\n\n    return;\n  }\n\n  if (sitrep.type === \"extraction\") {\n    if (state.objectiveDestroyed) {",
       "expected_matches": 1
     },
     {
       "file": "Lancer SitRep Tracker/styles/lancer-sitrep-tracker.css",
       "operation": "append",
-      "content": "\n/* ==========================================================\n   Extraction Sitrep\n   ========================================================== */\n\n#lancer-sitrep-hud .lst-extraction-objective {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 10px;\n  padding: 10px 14px 7px;\n}\n\n#lancer-sitrep-hud .lst-extraction-objective span {\n  color: #93a8b5;\n  font-size: 9px;\n}\n\n#lancer-sitrep-hud .lst-extraction-objective strong {\n  overflow: hidden;\n  color: white;\n  font-size: 13px;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n#lancer-sitrep-hud .lst-extraction-status {\n  margin: 3px 14px 9px;\n  padding: 7px;\n  border: 1px solid currentColor;\n  color: var(--lst-gold);\n  font-size: 12px;\n  font-weight: 800;\n  text-align: center;\n}\n\n#lancer-sitrep-hud .lst-extraction-ready,\n#lancer-sitrep-hud .lst-extraction-extracted,\n#lancer-sitrep-hud .lst-extraction-secured {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-extraction-destroyed,\n#lancer-sitrep-hud .lst-extraction-contested {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-extraction-grid {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  border-top: 1px solid rgba(255, 255, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-extraction-stat {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 9px 11px;\n  border-right: 1px solid rgba(255, 255, 255, 0.08);\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-extraction-stat span {\n  color: #93a8b5;\n  font-size: 8px;\n}\n\n#lancer-sitrep-hud .lst-extraction-stat strong {\n  color: white;\n  font-size: 13px;\n}\n\n#lancer-sitrep-hud .lst-extraction-stat.allied strong {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-extraction-stat.hostile strong {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-extraction-controls {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  gap: 6px;\n  padding: 8px;\n  border-top: 1px solid rgba(255, 255, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-extraction-controls button {\n  min-width: 0;\n  padding: 6px 4px;\n  border: 1px solid rgba(86, 228, 255, 0.35);\n  color: #eafaff;\n  font-size: 9px;\n  background: rgba(86, 228, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-extraction-controls button:last-child {\n  border-color: rgba(255, 70, 85, 0.5);\n  background: rgba(255, 70, 85, 0.08);\n}\n\n#lancer-sitrep-hud .lst-extraction-controls button:disabled {\n  cursor: default;\n  opacity: 0.4;\n}\n"
+      "content": "\n/* ==========================================================\n   Holdout Sitrep\n   ========================================================== */\n\n#lancer-sitrep-hud .lst-holdout-status {\n  margin: 4px 14px 9px;\n  padding: 7px;\n  border: 1px solid currentColor;\n  color: var(--lst-gold);\n  font-size: 12px;\n  font-weight: 800;\n  text-align: center;\n}\n\n#lancer-sitrep-hud .lst-holdout-holding {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-holdout-overrun {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-holdout-scoreboard {\n  display: grid;\n  grid-template-columns: 1fr auto;\n  align-items: center;\n  gap: 3px 12px;\n  padding: 10px 14px;\n  border-top: 1px solid rgba(255, 255, 255, 0.08);\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n  background: rgba(21, 152, 209, 0.07);\n}\n\n#lancer-sitrep-hud .lst-holdout-scoreboard > span {\n  color: #93a8b5;\n  font-size: 9px;\n}\n\n#lancer-sitrep-hud .lst-holdout-scoreboard > strong {\n  grid-row: span 2;\n  color: var(--lst-cyan);\n  font-size: 30px;\n  line-height: 1;\n}\n\n#lancer-sitrep-hud .lst-holdout-overrun + .lst-holdout-scoreboard > strong {\n  color: var(--lst-red);\n}\n\n#lancer-sitrep-hud .lst-holdout-scoreboard > small {\n  color: #b5c8d2;\n  font-size: 8px;\n}\n\n#lancer-sitrep-hud .lst-holdout-grid {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n}\n\n#lancer-sitrep-hud .lst-holdout-stat {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 9px 11px;\n  border-right: 1px solid rgba(255, 255, 255, 0.08);\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n}\n\n#lancer-sitrep-hud .lst-holdout-stat span {\n  color: #93a8b5;\n  font-size: 8px;\n}\n\n#lancer-sitrep-hud .lst-holdout-stat strong {\n  color: white;\n  font-size: 18px;\n}\n\n#lancer-sitrep-hud .lst-holdout-stat.allied strong {\n  color: var(--lst-cyan);\n}\n\n#lancer-sitrep-hud .lst-holdout-stat.hostile strong {\n  color: var(--lst-red);\n}\n"
     }
   ]
 }
