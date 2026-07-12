@@ -1,3 +1,4 @@
+import "./elevation-los.js";
 const MODULE_ID = "lancer-sitrep-tracker";
 const FLAG_KEY = "sitrep";
 const HUD_ID = "lancer-sitrep-hud";
