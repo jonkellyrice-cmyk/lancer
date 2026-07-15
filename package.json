@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "patch": "python ./dev_scripts/filepatcher.py", 
-    "search": "python ./dev_scripts/repo_search.py"
+    "patch": "python ./dev_scripts/filepatcher.py"
 
   }
 }
