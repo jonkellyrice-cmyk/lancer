@@ -1,12 +1,37 @@
 import "./elevation-los.js";
-const MODULE_ID = "lancer-sitrep-tracker";
-const FLAG_KEY = "sitrep";
-const HUD_ID = "lancer-sitrep-hud";
-const HUD_STATE_KEY = `${MODULE_ID}.hudState`;
+
+import {
+  MODULE_ID,
+  FLAG_KEY,
+  activeCombat,
+  getSitrep,
+  isPrimaryGM,
+  factionOf,
+  combatantIsDefeated,
+  regionFor,
+  controlRegionsFor,
+  controllerFromCounts,
+  combatantById,
+  tokensAreAdjacent,
+  tokenInsideRegion
+} from "./kernel.js";
+
+import {
+  HUD_ID,
+  createHUD,
+  escapeHTML,
+  keepHUDOnScreen,
+  mountHUD,
+  removeHUD
+} from "./ui-boilerplate.js";
+
+import {
+  installProgram
+} from "./program.js";
 
 const DEFAULTS = {
   type: "gauntlet",
-  title: "GAUNTLET",
+  title: "OPERATION: GRAYSPACE",
   objective:
     "Have more allied units than hostile units in the control zone at the end of the final round.",
   regionId: "",
@@ -48,149 +73,11 @@ const SITREP_TYPES = [
   { value: "recon", label: "Recon" }
 ];
 
-const esc = value =>
-  foundry.utils.escapeHTML(String(value ?? ""));
+const esc = escapeHTML;
 
 /* ==========================================================
-   Core Sitrep helpers
+   Sitrep state composition
    ========================================================== */
-
-function activeCombat() {
-  return game.combat ?? game.combats?.active ?? null;
-}
-
-function getSitrep(combat = activeCombat()) {
-  return combat?.getFlag(MODULE_ID, FLAG_KEY) ?? null;
-}
-
-function isPrimaryGM() {
-  if (!game.user?.isGM) return false;
-
-  const activeGMs = game.users.filter(
-    user => user.active && user.isGM
-  );
-
-  return !activeGMs.length || activeGMs[0].id === game.user.id;
-}
-
-function tokenDisposition(tokenDocument) {
-  return Number(tokenDocument?.disposition ?? 0);
-}
-
-function factionOf(tokenDocument) {
-  const disposition = tokenDisposition(tokenDocument);
-
-  const friendly = Number(
-    CONST.TOKEN_DISPOSITIONS?.FRIENDLY ?? 1
-  );
-
-  const hostile = Number(
-    CONST.TOKEN_DISPOSITIONS?.HOSTILE ?? -1
-  );
-
-  if (disposition === friendly) return "friendly";
-  if (disposition === hostile) return "hostile";
-
-  return "neutral";
-}
-
-function combatantIsDefeated(combatant) {
-  if (typeof combatant?.isDefeated === "boolean") {
-    return combatant.isDefeated;
-  }
-
-  if (combatant?.defeated === true) {
-    return true;
-  }
-
-  const defeatedId = CONFIG.specialStatusEffects?.DEFEATED;
-
-  return Boolean(
-    defeatedId &&
-    combatant?.actor?.statuses?.has?.(defeatedId)
-  );
-}
-
-function regionFor(combat, sitrep) {
-  const scene = combat?.scene ?? canvas.scene;
-
-  return scene?.regions?.get(sitrep?.regionId) ?? null;
-}
-
-function controlRegionsFor(combat, sitrep) {
-  const scene = combat?.scene ?? canvas.scene;
-  const ids = Array.isArray(sitrep?.controlRegionIds)
-    ? sitrep.controlRegionIds
-    : [];
-
-  return ids
-    .map(id => scene?.regions?.get(id) ?? null)
-    .filter(Boolean);
-}
-
-function controllerFromCounts(friendly, hostile) {
-  if (friendly > hostile) return "friendly";
-  if (hostile > friendly) return "hostile";
-  return "contested";
-}
-
-function combatantById(combat, combatantId) {
-  return combat?.combatants?.get(combatantId) ?? null;
-}
-
-function tokenBoundsInGridSpaces(tokenDocument) {
-  const gridSize = Number(canvas?.grid?.size ?? canvas?.scene?.grid?.size ?? 100);
-
-  const left = Number(tokenDocument?.x ?? 0) / gridSize;
-  const top = Number(tokenDocument?.y ?? 0) / gridSize;
-  const width = Number(tokenDocument?.width ?? 1);
-  const height = Number(tokenDocument?.height ?? 1);
-
-  return {
-    left,
-    top,
-    right: left + width,
-    bottom: top + height
-  };
-}
-
-function tokensAreAdjacent(firstToken, secondToken) {
-  if (!firstToken || !secondToken) return false;
-
-  const first = tokenBoundsInGridSpaces(firstToken);
-  const second = tokenBoundsInGridSpaces(secondToken);
-
-  const horizontalGap = Math.max(
-    0,
-    Math.max(first.left, second.left) -
-      Math.min(first.right, second.right)
-  );
-
-  const verticalGap = Math.max(
-    0,
-    Math.max(first.top, second.top) -
-      Math.min(first.bottom, second.bottom)
-  );
-
-  return horizontalGap <= 0.05 && verticalGap <= 0.05;
-}
-
-function tokenInsideRegion(tokenDocument, region) {
-  if (!tokenDocument || !region) return false;
-
-  try {
-    return Boolean(tokenDocument.testInsideRegion(region));
-  } catch (error) {
-    console.warn(
-      `${MODULE_ID} | Could not test token in Region`,
-      error
-    );
-
-    return Boolean(
-      tokenDocument.regions?.has?.(region.id)
-    );
-  }
-}
 
 function calculateState(
   combat = activeCombat(),
@@ -918,356 +805,25 @@ function renderControlState(sitrep, state) {
 }
 
 /* ==========================================================
-   Saved HUD position and minimized state
-   ========================================================== */
-
-function readHUDState() {
-  try {
-    const stored =
-      localStorage.getItem(HUD_STATE_KEY);
-
-    if (!stored) return {};
-
-    const parsed = JSON.parse(stored);
-
-    return parsed && typeof parsed === "object"
-      ? parsed
-      : {};
-  } catch (error) {
-    console.warn(
-      `${MODULE_ID} | Could not read HUD state`,
-      error
-    );
-
-    return {};
-  }
-}
-
-function writeHUDState(changes = {}) {
-  const state = {
-    ...readHUDState(),
-    ...changes
-  };
-
-  try {
-    localStorage.setItem(
-      HUD_STATE_KEY,
-      JSON.stringify(state)
-    );
-  } catch (error) {
-    console.warn(
-      `${MODULE_ID} | Could not save HUD state`,
-      error
-    );
-  }
-
-  return state;
-}
-
-function getSidebarRectangle() {
-  const sidebar =
-    document.querySelector("#sidebar") ??
-    document.querySelector("#ui-right");
-
-  return sidebar?.getBoundingClientRect?.() ?? null;
-}
-
-function clampHUDPosition(hud, left, top) {
-  const margin = 8;
-
-  const maximumLeft = Math.max(
-    margin,
-    window.innerWidth - hud.offsetWidth - margin
-  );
-
-  const maximumTop = Math.max(
-    margin,
-    window.innerHeight - hud.offsetHeight - margin
-  );
-
-  return {
-    left: Math.min(
-      Math.max(Number(left) || margin, margin),
-      maximumLeft
-    ),
-    top: Math.min(
-      Math.max(Number(top) || margin, margin),
-      maximumTop
-    )
-  };
-}
-
-function defaultHUDPosition(hud) {
-  const sidebarRect = getSidebarRectangle();
-
-  /*
-   * Leave a visible gap between the HUD and the sidebar.
-   * Foundry's sidebar is normally on the right side.
-   */
-  const sidebarLeft =
-    sidebarRect?.left ??
-    window.innerWidth - 320;
-
-  const desiredLeft =
-    sidebarLeft - hud.offsetWidth - 24;
-
-  return clampHUDPosition(
-    hud,
-    desiredLeft,
-    80
-  );
-}
-
-function applyHUDPosition(hud) {
-  const savedState = readHUDState();
-
-  const hasSavedLeft =
-    Number.isFinite(Number(savedState.left));
-
-  const hasSavedTop =
-    Number.isFinite(Number(savedState.top));
-
-  const position =
-    hasSavedLeft && hasSavedTop
-      ? clampHUDPosition(
-          hud,
-          Number(savedState.left),
-          Number(savedState.top)
-        )
-      : defaultHUDPosition(hud);
-
-  hud.style.left = `${position.left}px`;
-  hud.style.top = `${position.top}px`;
-  hud.style.right = "auto";
-
-  if (!hasSavedLeft || !hasSavedTop) {
-    writeHUDState(position);
-  }
-}
-
-function updateMinimizeButton(hud, minimized) {
-  const button = hud.querySelector(
-    '[data-action="minimize"]'
-  );
-
-  const icon = button?.querySelector("i");
-
-  if (!button) return;
-
-  button.title = minimized
-    ? "Restore Sitrep"
-    : "Minimize Sitrep";
-
-  button.setAttribute(
-    "aria-label",
-    minimized
-      ? "Restore Sitrep"
-      : "Minimize Sitrep"
-  );
-
-  if (icon) {
-    icon.className = minimized
-      ? "fas fa-window-maximize"
-      : "fas fa-window-minimize";
-  }
-}
-
-function applyHUDMinimizedState(hud) {
-  const minimized =
-    readHUDState().minimized === true;
-
-  hud.classList.toggle(
-    "lst-minimized",
-    minimized
-  );
-
-  updateMinimizeButton(hud, minimized);
-}
-
-function toggleHUDMinimized(hud) {
-  const minimized =
-    !hud.classList.contains("lst-minimized");
-
-  hud.classList.toggle(
-    "lst-minimized",
-    minimized
-  );
-
-  updateMinimizeButton(hud, minimized);
-
-  writeHUDState({ minimized });
-
-  /*
-   * Changing the HUD size can push part of it offscreen.
-   */
-  requestAnimationFrame(() => {
-    const rectangle =
-      hud.getBoundingClientRect();
-
-    const position = clampHUDPosition(
-      hud,
-      rectangle.left,
-      rectangle.top
-    );
-
-    hud.style.left = `${position.left}px`;
-    hud.style.top = `${position.top}px`;
-
-    writeHUDState(position);
-  });
-}
-
-function makeHUDDraggable(hud) {
-  const handle = hud.querySelector(".lst-header");
-
-  if (!handle) return;
-
-  handle.addEventListener(
-    "pointerdown",
-    event => {
-      if (event.button !== 0) return;
-
-      /*
-       * Clicking a header button should not begin dragging.
-       */
-      if (event.target.closest("button")) {
-        return;
-      }
-
-      event.preventDefault();
-
-      const startingRectangle =
-        hud.getBoundingClientRect();
-
-      const startingPointerX = event.clientX;
-      const startingPointerY = event.clientY;
-
-      hud.classList.add("lst-dragging");
-
-      handle.setPointerCapture?.(
-        event.pointerId
-      );
-
-      const handlePointerMove = moveEvent => {
-        const desiredLeft =
-          startingRectangle.left +
-          moveEvent.clientX -
-          startingPointerX;
-
-        const desiredTop =
-          startingRectangle.top +
-          moveEvent.clientY -
-          startingPointerY;
-
-        const position = clampHUDPosition(
-          hud,
-          desiredLeft,
-          desiredTop
-        );
-
-        hud.style.left = `${position.left}px`;
-        hud.style.top = `${position.top}px`;
-        hud.style.right = "auto";
-      };
-
-      const stopDragging = endEvent => {
-        hud.classList.remove("lst-dragging");
-
-        handle.removeEventListener(
-          "pointermove",
-          handlePointerMove
-        );
-
-        handle.removeEventListener(
-          "pointerup",
-          stopDragging
-        );
-
-        handle.removeEventListener(
-          "pointercancel",
-          stopDragging
-        );
-
-        try {
-          handle.releasePointerCapture?.(
-            endEvent.pointerId
-          );
-        } catch {
-          // Pointer capture may already have been released.
-        }
-
-        const finalRectangle =
-          hud.getBoundingClientRect();
-
-        writeHUDState({
-          left: Math.round(finalRectangle.left),
-          top: Math.round(finalRectangle.top)
-        });
-      };
-
-      handle.addEventListener(
-        "pointermove",
-        handlePointerMove
-      );
-
-      handle.addEventListener(
-        "pointerup",
-        stopDragging
-      );
-
-      handle.addEventListener(
-        "pointercancel",
-        stopDragging
-      );
-    }
-  );
-}
-
-function keepHUDOnScreen() {
-  const hud =
-    document.getElementById(HUD_ID);
-
-  if (!hud) return;
-
-  const rectangle =
-    hud.getBoundingClientRect();
-
-  const position = clampHUDPosition(
-    hud,
-    rectangle.left,
-    rectangle.top
-  );
-
-  hud.style.left = `${position.left}px`;
-  hud.style.top = `${position.top}px`;
-  hud.style.right = "auto";
-
-  writeHUDState(position);
-}
-
-/* ==========================================================
    HUD rendering
    ========================================================== */
 
 function renderHUD() {
-  document.getElementById(HUD_ID)?.remove();
-
   const combat = activeCombat();
   const sitrep = getSitrep(combat);
 
-  if (!combat || !sitrep?.active) return;
+  if (!combat || !sitrep?.active) {
+    removeHUD();
+    return;
+  }
 
   const state = calculateState(combat, sitrep);
 
-  const hud = document.createElement("section");
-
-  hud.id = HUD_ID;
-
-  hud.className = [
+  const hud = createHUD([
     "lst-hud",
     `lst-${esc(sitrep.status)}`,
     `lst-control-${esc(state.controller)}`
-  ].join(" ");
+  ]);
 
   let statusText =
     state.roundsRemaining === 1
@@ -1514,100 +1070,56 @@ function renderHUD() {
     </div>
   `;
 
-  document.body.appendChild(hud);
+  mountHUD(hud, {
+    configure: openSetupDialog,
 
-  applyHUDPosition(hud);
-  applyHUDMinimizedState(hud);
-  makeHUDDraggable(hud);
-
-  hud
-    .querySelector('[data-action="minimize"]')
-    ?.addEventListener("click", () => {
-      toggleHUDMinimized(hud);
-    });
-
-  hud
-    .querySelector('[data-action="configure"]')
-    ?.addEventListener(
-      "click",
-      openSetupDialog
-    );
-
-  hud
-    .querySelectorAll('[data-action="recon-scan"]')
-    .forEach(button => {
-      button.addEventListener("click", () => {
-        const regionId = String(
-          button.dataset.regionId ?? ""
-        );
-
-        recordReconScan(regionId);
-      });
-    });
-
-  hud
-    .querySelector('[data-action="extraction-extract"]')
-    ?.addEventListener(
-      "click",
-      () => resolveExtractionObjective("extracted")
-    );
-
-  hud
-    .querySelector('[data-action="extraction-destroy"]')
-    ?.addEventListener(
-      "click",
-      () => resolveExtractionObjective("destroyed")
-    );
-
-  hud
-    .querySelector('[data-action="escort-extract"]')
-    ?.addEventListener(
-      "click",
-      () => resolveEscortObjective("extracted")
-    );
-
-  hud
-    .querySelector('[data-action="escort-destroy"]')
-    ?.addEventListener(
-      "click",
-      () => resolveEscortObjective("destroyed")
-    );
-
-  hud
-    .querySelector('[data-action="toggle"]')
-    ?.addEventListener(
-      "click",
-      togglePause
-    );
-
-  hud
-    .querySelector('[data-action="victory"]')
-    ?.addEventListener(
-      "click",
-      () =>
-        setResult(
-          "victory",
-          "Victory declared by the GM."
+    "recon-scan": (
+      event,
+      control
+    ) => {
+      recordReconScan(
+        String(
+          control.dataset.regionId ?? ""
         )
-    );
+      );
+    },
 
-  hud
-    .querySelector('[data-action="defeat"]')
-    ?.addEventListener(
-      "click",
-      () =>
-        setResult(
-          "defeat",
-          "Defeat declared by the GM."
-        )
-    );
+    "extraction-extract": () =>
+      resolveExtractionObjective(
+        "extracted"
+      ),
 
-  hud
-    .querySelector('[data-action="end"]')
-    ?.addEventListener(
-      "click",
-      endSitrep
-    );
+    "extraction-destroy": () =>
+      resolveExtractionObjective(
+        "destroyed"
+      ),
+
+    "escort-extract": () =>
+      resolveEscortObjective(
+        "extracted"
+      ),
+
+    "escort-destroy": () =>
+      resolveEscortObjective(
+        "destroyed"
+      ),
+
+    toggle: togglePause,
+
+    victory: () =>
+      setResult(
+        "victory",
+        "Victory declared by the GM."
+      ),
+
+    defeat: () =>
+      setResult(
+        "defeat",
+        "Defeat declared by the GM."
+      ),
+
+    end: endSitrep
+  });
 }
 
 /* ==========================================================
@@ -2147,9 +1659,7 @@ async function endSitrep() {
     FLAG_KEY
   );
 
-  document
-    .getElementById(HUD_ID)
-    ?.remove();
+  removeHUD();
 }
 
 /* ==========================================================
@@ -2964,164 +2474,135 @@ function openSetupDialog() {
 }
 
 /* ==========================================================
-   Combat Tracker button
+   Foundry program wiring
    ========================================================== */
 
-function addCombatTrackerButton(
-  app,
-  html
-) {
-  if (!game.user.isGM) return;
+installProgram({
+  moduleId: MODULE_ID,
 
-  const root =
-    html[0] ?? html;
-
-  if (
-    root.querySelector?.(
-      ".lst-open-button"
-    )
-  ) {
-    return;
-  }
-
-  const button =
-    document.createElement("button");
-
-  button.type = "button";
-  button.className =
-    "lst-open-button";
-
-  button.innerHTML =
-    '<i class="fas fa-bullseye"></i> Sitrep';
-
-  button.addEventListener(
-    "click",
-    openSetupDialog
-  );
-
-  const header =
-    root.querySelector?.(
-      ".combat-tracker-header"
-    ) ??
-    root.querySelector?.("header") ??
-    root;
-
-  header.prepend(button);
-}
-
-/* ==========================================================
-   Refreshing and Foundry hooks
-   ========================================================== */
-
-function scheduleRefresh() {
-  clearTimeout(
-    globalThis.__lancerSitrepRefresh
-  );
-
-  globalThis.__lancerSitrepRefresh =
-    setTimeout(
-      renderHUD,
-      50
-    );
-}
-
-function scheduleViewportClamp() {
-  clearTimeout(
-    globalThis.__lancerSitrepResize
-  );
-
-  globalThis.__lancerSitrepResize =
-    setTimeout(
-      keepHUDOnScreen,
-      100
-    );
-}
-
-Hooks.once("init", () => {
-  console.log(
-    `${MODULE_ID} | Initializing`
-  );
-});
-
-Hooks.once("ready", () => {
-  game.lancerSitrep = {
+  publicApi: {
     openSetup: openSetupDialog,
     renderHUD,
     calculateState,
     end: endSitrep
-  };
+  },
 
-  window.addEventListener(
-    "resize",
-    scheduleViewportClamp
-  );
+  ready: renderHUD,
 
-  renderHUD();
+  resize: {
+    key: "__lancerSitrepResize",
+    delay: 100,
+    handler: keepHUDOnScreen
+  },
+
+  combatTrackerButton: {
+    className: "lst-open-button",
+
+    content:
+      '<i class="fas fa-bullseye"></i> Sitrep',
+
+    when: () => game.user.isGM,
+
+    onClick: openSetupDialog,
+
+    findTarget: root =>
+      root.querySelector?.(
+        ".combat-tracker-header"
+      ) ??
+      root.querySelector?.("header") ??
+      root
+  },
+
+  hooks: [
+    {
+      event: "renderCombatTracker",
+      kind: "combat-tracker-button"
+    },
+
+    {
+      event: "canvasReady",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "updateCombat",
+
+      handler: async (
+        combat,
+        changes
+      ) => {
+        renderHUD();
+
+        await evaluateSitrep(
+          combat,
+          changes
+        );
+      }
+    },
+
+    {
+      event: "updateCombatant",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "createCombatant",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "deleteCombatant",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "updateToken",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "createToken",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "deleteToken",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "updateRegion",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "deleteRegion",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    },
+
+    {
+      event: "controlToken",
+      key: "__lancerSitrepRefresh",
+      delay: 50,
+      handler: renderHUD
+    }
+  ]
 });
-
-Hooks.on(
-  "renderCombatTracker",
-  addCombatTrackerButton
-);
-
-Hooks.on(
-  "canvasReady",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "updateCombat",
-  async (combat, changes) => {
-    scheduleRefresh();
-
-    await evaluateSitrep(
-      combat,
-      changes
-    );
-  }
-);
-
-Hooks.on(
-  "updateCombatant",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "createCombatant",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "deleteCombatant",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "updateToken",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "createToken",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "deleteToken",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "updateRegion",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "deleteRegion",
-  scheduleRefresh
-);
-
-Hooks.on(
-  "controlToken",
-  scheduleRefresh
-);
