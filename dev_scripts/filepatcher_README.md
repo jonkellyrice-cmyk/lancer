@@ -1,3 +1,4 @@
+# run the current patch when you get home
 # Safe Repository Patcher — LLM Bootstrap Guide
 
 > **Purpose**
