@@ -1,62 +1,81 @@
 {
-  "name": "Add elevation-aware ambient lights with 3D spherical radii",
+  "schema_version": 2,
+  "id": "frame-helm-movement-tracking-v1",
+  "name": "Add Frame Helm movement tracking",
+  "description": "Tracks token movement and commits movement actions at configured thresholds.",
   "backup": true,
+  "allow_noop": false,
+
+  "repository": {
+    "require_git": true,
+    "require_clean_targets": true,
+    "require_clean_repository": false
+  },
+
+  "risk_acceptance": {
+    "overwrite_files": false,
+    "delete_files": false,
+    "move_files": false,
+    "change_dependencies": false,
+    "modify_package_manifest": false
+  },
+
+  "limits": {
+    "max_files_changed": 10,
+    "max_total_added_bytes": 200000,
+    "max_single_file_bytes": 500000,
+    "allowed_roots": [
+      "scripts",
+      "styles",
+      "templates",
+      "dev_scripts"
+    ]
+  },
+
+  "preconditions": [
+    {
+      "type": "file_exists",
+      "file": "scripts/lancer-frame-helm.js"
+    }
+  ],
+
   "operations": [
     {
-      "file": "Lancer SitRep Tracker/scripts/elevation-los.js",
       "operation": "replace",
-      "find": "function viewingElevationFromPolygon(polygon) {\n  const source = polygon?.config?.source;\n\n  const tokenDocument =\n    source?.object?.document ??\n    source?.object ??\n    source?.document ??\n    source?.token?.document ??\n    source?.token ??\n    null;\n\n  if (!tokenDocument) return null;\n\n  const documentName =\n    tokenDocument.documentName ??\n    tokenDocument.constructor?.documentName;\n\n  if (documentName !== \"Token\") return null;\n\n  return finiteNumberOr(\n    tokenDocument.elevation ?? source?.elevation,\n    0\n  );\n}",
-      "replace": "function sourceDocumentFromPolygon(polygon) {\n  const source = polygon?.config?.source;\n\n  const candidates = [\n    source?.object?.document,\n    source?.object,\n    source?.document,\n    source?.token?.document,\n    source?.token,\n    source?.light?.document,\n    source?.light,\n    source?.ambientLight?.document,\n    source?.ambientLight\n  ];\n\n  for (const candidate of candidates) {\n    if (!candidate) continue;\n\n    const documentName =\n      candidate.documentName ??\n      candidate.constructor?.documentName;\n\n    if (\n      documentName === \"Token\" ||\n      documentName === \"AmbientLight\"\n    ) {\n      return candidate;\n    }\n  }\n\n  return null;\n}\n\nfunction sourceElevationFromPolygon(polygon) {\n  const source = polygon?.config?.source;\n  const sourceDocument = sourceDocumentFromPolygon(polygon);\n\n  if (!sourceDocument) return null;\n\n  return finiteNumberOr(\n    sourceDocument.elevation ??\n    source?.elevation ??\n    source?.data?.elevation,\n    0\n  );\n}\n\n/* ==========================================================\n   Three-dimensional ambient-light radius\n   ========================================================== */\n\nconst LIGHT_GROUND_ELEVATION = 0;\n\nfunction horizontalRadiusAtGround(\n  sphericalRadius,\n  lightElevation,\n  groundElevation = LIGHT_GROUND_ELEVATION\n) {\n  const radius = Math.abs(\n    finiteNumberOr(sphericalRadius, 0)\n  );\n\n  const verticalDistance = Math.abs(\n    finiteNumberOr(lightElevation, 0) -\n    finiteNumberOr(groundElevation, 0)\n  );\n\n  if (radius <= 0 || verticalDistance >= radius) {\n    return 0;\n  }\n\n  return Math.sqrt(\n    Math.max(\n      0,\n      radius * radius -\n      verticalDistance * verticalDistance\n    )\n  );\n}\n\nfunction sceneDistanceToPixels(distance) {\n  const gridSize = finiteNumberOr(\n    canvas?.dimensions?.size ??\n    canvas?.scene?.grid?.size,\n    100\n  );\n\n  const gridDistance = finiteNumberOr(\n    canvas?.dimensions?.distance ??\n    canvas?.scene?.grid?.distance,\n    1\n  );\n\n  if (gridDistance === 0) return distance;\n\n  return distance * gridSize / gridDistance;\n}\n\nfunction preserveRadiusSign(originalRadius, adjustedRadius) {\n  const original = finiteNumberOr(originalRadius, 0);\n  const sign = original < 0 ? -1 : 1;\n\n  return adjustedRadius * sign;\n}\n\nfunction radiusValueForReturnedUnits(\n  returnedValue,\n  configuredRadius,\n  horizontalSceneRadius\n) {\n  const returned = Math.abs(\n    finiteNumberOr(returnedValue, 0)\n  );\n\n  const configured = Math.abs(\n    finiteNumberOr(configuredRadius, 0)\n  );\n\n  const horizontalPixels = sceneDistanceToPixels(\n    horizontalSceneRadius\n  );\n\n  /*\n   * Foundry versions may expose source radius data in either\n   * Scene-distance units or canvas pixels. Compare the returned\n   * value to both possibilities and preserve the unit convention\n   * used by the current Foundry build.\n   */\n  const configuredPixels = sceneDistanceToPixels(configured);\n\n  const sceneUnitDifference = Math.abs(\n    returned - configured\n  );\n\n  const pixelDifference = Math.abs(\n    returned - configuredPixels\n  );\n\n  return sceneUnitDifference <= pixelDifference\n    ? horizontalSceneRadius\n    : horizontalPixels;\n}\n\nfunction installAmbientLightRadiusWrapper() {\n  const AmbientLightClass =\n    foundry?.canvas?.placeables?.AmbientLight ??\n    globalThis.AmbientLight;\n\n  const prototype = AmbientLightClass?.prototype;\n\n  if (!prototype) {\n    console.error(\n      `${MODULE_ID} | Could not locate the AmbientLight class.`\n    );\n\n    return false;\n  }\n\n  if (prototype.__lancer3DLightRadiusWrapped) {\n    return true;\n  }\n\n  const original = prototype._getLightSourceData;\n\n  if (typeof original !== \"function\") {\n    console.error(\n      `${MODULE_ID} | AmbientLight._getLightSourceData could not be located.`\n    );\n\n    return false;\n  }\n\n  prototype._getLightSourceData = function (...args) {\n    const originalData = original.apply(this, args);\n\n    if (!originalData || typeof originalData !== \"object\") {\n      return originalData;\n    }\n\n    const data = {\n      ...originalData\n    };\n\n    const elevation = finiteNumberOr(\n      this.document?.elevation ??\n      originalData.elevation,\n      0\n    );\n\n    const configuredBright = finiteNumberOr(\n      this.config?.bright ??\n      this.document?.config?.bright,\n      0\n    );\n\n    const configuredDim = finiteNumberOr(\n      this.config?.dim ??\n      this.document?.config?.dim,\n      0\n    );\n\n    const horizontalBright = horizontalRadiusAtGround(\n      configuredBright,\n      elevation\n    );\n\n    const horizontalDim = horizontalRadiusAtGround(\n      configuredDim,\n      elevation\n    );\n\n    if (\n      Object.prototype.hasOwnProperty.call(\n        data,\n        \"bright\"\n      )\n    ) {\n      const adjustedBright = radiusValueForReturnedUnits(\n        data.bright,\n        configuredBright,\n        horizontalBright\n      );\n\n      data.bright = preserveRadiusSign(\n        data.bright,\n        adjustedBright\n      );\n    }\n\n    if (\n      Object.prototype.hasOwnProperty.call(\n        data,\n        \"dim\"\n      )\n    ) {\n      const adjustedDim = radiusValueForReturnedUnits(\n        data.dim,\n        configuredDim,\n        horizontalDim\n      );\n\n      data.dim = preserveRadiusSign(\n        data.dim,\n        adjustedDim\n      );\n    }\n\n    const maximumHorizontalRadius = Math.max(\n      horizontalBright,\n      horizontalDim\n    );\n\n    const maximumHorizontalPixels =\n      sceneDistanceToPixels(maximumHorizontalRadius);\n\n    if (\n      Object.prototype.hasOwnProperty.call(\n        data,\n        \"radius\"\n      )\n    ) {\n      data.radius = maximumHorizontalPixels;\n    }\n\n    if (\n      Object.prototype.hasOwnProperty.call(\n        data,\n        \"externalRadius\"\n      )\n    ) {\n      data.externalRadius = maximumHorizontalPixels;\n    }\n\n    return data;\n  };\n\n  Object.defineProperty(\n    prototype,\n    \"__lancer3DLightRadiusWrapped\",\n    {\n      value: true,\n      configurable: true\n    }\n  );\n\n  console.log(\n    `${MODULE_ID} | Three-dimensional ambient-light radius installed.`\n  );\n\n  return true;\n}",
+      "file": "scripts/lancer-frame-helm.js",
+      "find": "const MODULE_ID = \"lancer-frame-helm\";",
+      "replace": "const MODULE_ID = \"lancer-frame-helm\";\nconst MOVEMENT_TRACKING_ENABLED = true;",
       "expected_matches": 1
     },
+
     {
-      "file": "Lancer SitRep Tracker/scripts/elevation-los.js",
-      "operation": "replace",
-      "find": "      const isElevationAwarePolygon = [\n        \"sight\",\n        \"vision\",\n        \"move\",\n        \"movement\"\n      ].includes(restrictionType);\n\n      if (isElevationAwarePolygon) {\n        const tokenElevation =\n          viewingElevationFromPolygon(this);\n\n        if (tokenElevation !== null) {\n          const wallDocument =\n            wallDocumentFromEdge(args[0]);\n\n          if (\n            wallDocument &&\n            wallHasFiniteElevation(wallDocument) &&\n            !wallBlocksElevation(\n              wallDocument,\n              tokenElevation\n            )\n          ) {\n            /*\n             * Returning false excludes this wall from the polygon.\n             * For vision, the token can see over it. For movement,\n             * the token can pass over or beneath it.\n             */\n            return false;\n          }\n        }\n      }",
-      "replace": "      const isElevationAwarePolygon = [\n        \"sight\",\n        \"vision\",\n        \"move\",\n        \"movement\",\n        \"light\",\n        \"illumination\"\n      ].includes(restrictionType);\n\n      if (isElevationAwarePolygon) {\n        const sourceElevation =\n          sourceElevationFromPolygon(this);\n\n        if (sourceElevation !== null) {\n          const wallDocument =\n            wallDocumentFromEdge(args[0]);\n\n          if (\n            wallDocument &&\n            wallHasFiniteElevation(wallDocument) &&\n            !wallBlocksElevation(\n              wallDocument,\n              sourceElevation\n            )\n          ) {\n            /*\n             * Returning false excludes this wall from the polygon.\n             *\n             * Token vision can see over it.\n             * Token movement can pass over or beneath it.\n             * Ambient light can shine over or beneath it.\n             */\n            return false;\n          }\n        }\n      }",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/elevation-los.js",
-      "operation": "replace",
-      "find": "/* ==========================================================\n   Public helpers and bulk editing\n   ========================================================== */",
-      "replace": "/* ==========================================================\n   Ambient light elevation configuration\n   ========================================================== */\n\nfunction injectAmbientLightElevationField(app, html) {\n  if (!game.user?.isGM) return;\n\n  const root = wallConfigRoot(html);\n  if (!root) return;\n\n  if (\n    root.querySelector(\n      \".lancer-light-elevation-fieldset\"\n    )\n  ) {\n    return;\n  }\n\n  const lightDocument =\n    app?.document ??\n    app?.object ??\n    null;\n\n  if (!lightDocument) return;\n\n  const documentName =\n    lightDocument.documentName ??\n    lightDocument.constructor?.documentName;\n\n  if (documentName !== \"AmbientLight\") return;\n\n  const form =\n    root.matches?.(\"form\")\n      ? root\n      : root.querySelector(\"form\");\n\n  if (!form) return;\n\n  const existingElevationInput =\n    form.querySelector('[name=\"elevation\"]');\n\n  if (existingElevationInput) {\n    const existingGroup =\n      existingElevationInput.closest(\".form-group\");\n\n    existingGroup?.classList.add(\n      \"lancer-light-elevation-native-field\"\n    );\n\n    const existingNotes = document.createElement(\"p\");\n    existingNotes.className =\n      \"notes lancer-light-elevation-notes\";\n\n    existingNotes.innerHTML = `\n      Elevation defaults to 0. Bright and dim ranges are treated\n      as spherical 3D radii projected onto ground elevation 0.\n      Raising the light therefore reduces its horizontal footprint.\n    `;\n\n    existingGroup?.appendChild(existingNotes);\n    return;\n  }\n\n  const fieldset = document.createElement(\"fieldset\");\n\n  fieldset.className =\n    \"lancer-elevation-los-fieldset lancer-light-elevation-fieldset\";\n\n  fieldset.innerHTML = `\n    <legend>\n      <i class=\"fas fa-lightbulb\"></i>\n      Lancer Light Elevation\n    </legend>\n\n    <div class=\"form-group\">\n      <label>Light Elevation</label>\n\n      <div class=\"form-fields\">\n        <input\n          type=\"number\"\n          step=\"any\"\n          name=\"elevation\"\n          value=\"${foundry.utils.escapeHTML(\n            String(lightDocument.elevation ?? 0)\n          )}\"\n        >\n      </div>\n    </div>\n\n    <p class=\"notes\">\n      The default elevation is 0. Bright and dim ranges are\n      spherical 3D radii measured from the light source. Raising\n      the light reduces the horizontal area illuminated on ground\n      elevation 0. If elevation equals or exceeds a radius, that\n      radius no longer reaches the ground.\n    </p>\n\n    <p class=\"notes\">\n      Wall occlusion also uses this elevation. A light at or above\n      a wall's Top Elevation can shine over that wall.\n    </p>\n\n    <div class=\"lancer-elevation-los-presets\">\n      <button type=\"button\" data-light-elevation=\"0\">\n        Ground\n      </button>\n\n      <button type=\"button\" data-light-elevation=\"1\">\n        Elevation 1\n      </button>\n\n      <button type=\"button\" data-light-elevation=\"2\">\n        Elevation 2\n      </button>\n\n      <button type=\"button\" data-light-elevation=\"3\">\n        Elevation 3\n      </button>\n\n      <button type=\"button\" data-light-elevation=\"5\">\n        Elevation 5\n      </button>\n    </div>\n  `;\n\n  const footer = form.querySelector(\n    \".form-footer, footer\"\n  );\n\n  if (footer) {\n    footer.before(fieldset);\n  } else {\n    form.appendChild(fieldset);\n  }\n\n  const elevationInput = fieldset.querySelector(\n    '[name=\"elevation\"]'\n  );\n\n  fieldset\n    .querySelectorAll(\"[data-light-elevation]\")\n    .forEach(button => {\n      button.addEventListener(\"click\", () => {\n        elevationInput.value =\n          button.dataset.lightElevation ?? \"0\";\n\n        elevationInput.dispatchEvent(\n          new Event(\"change\", {\n            bubbles: true\n          })\n        );\n      });\n    });\n}\n\n/* ==========================================================\n   Public helpers and bulk editing\n   ========================================================== */",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/elevation-los.js",
-      "operation": "replace",
-      "find": "async function setSelectedWallRange(bottom, top) {",
-      "replace": "async function setAmbientLightElevation(\n  lightDocument,\n  elevation\n) {\n  if (!game.user?.isGM || !lightDocument) return;\n\n  await lightDocument.update({\n    elevation: finiteNumberOr(elevation, 0)\n  });\n\n  refreshElevationVision();\n}\n\nasync function setSelectedLightElevation(elevation) {\n  if (!game.user?.isGM) {\n    return ui.notifications.warn(\n      \"Only a GM can configure light elevations.\"\n    );\n  }\n\n  const controlledLights =\n    canvas?.lighting?.controlled ?? [];\n\n  if (!controlledLights.length) {\n    return ui.notifications.warn(\n      \"Select one or more ambient lights first.\"\n    );\n  }\n\n  const numericElevation =\n    finiteNumberOr(elevation, 0);\n\n  const updates = controlledLights.map(light => ({\n    _id: light.document.id,\n    elevation: numericElevation\n  }));\n\n  await canvas.scene.updateEmbeddedDocuments(\n    \"AmbientLight\",\n    updates\n  );\n\n  for (const light of controlledLights) {\n    try {\n      light.initializeLightSource?.();\n    } catch (error) {\n      console.warn(\n        `${MODULE_ID} | Could not directly reinitialize a selected light.`,\n        error\n      );\n    }\n  }\n\n  refreshElevationVision();\n\n  ui.notifications.info(\n    `Updated elevation for ${updates.length} light source(s).`\n  );\n}\n\nasync function setSelectedWallRange(bottom, top) {",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/elevation-los.js",
-      "operation": "replace",
-      "find": "Hooks.once(\"init\", () => {\n  installStyles();\n  installVisionPolygonWrapper();\n});",
-      "replace": "Hooks.once(\"init\", () => {\n  installStyles();\n  installVisionPolygonWrapper();\n  installAmbientLightRadiusWrapper();\n});",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/elevation-los.js",
-      "operation": "replace",
-      "find": "  game.lancerElevationLOS = {\n    refresh: refreshElevationVision,\n    getWallRange: wallElevationRange,\n    setWallRange,\n    setSelectedWallRange\n  };",
-      "replace": "  game.lancerElevationLOS = {\n    refresh: refreshElevationVision,\n    getWallRange: wallElevationRange,\n    setWallRange,\n    setSelectedWallRange,\n    setAmbientLightElevation,\n    setSelectedLightElevation,\n    horizontalRadiusAtGround\n  };",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/elevation-los.js",
-      "operation": "replace",
-      "find": "Hooks.on(\n  \"renderWallConfig\",\n  injectWallElevationFields\n);",
-      "replace": "Hooks.on(\n  \"renderWallConfig\",\n  injectWallElevationFields\n);\n\nHooks.on(\n  \"renderAmbientLightConfig\",\n  injectAmbientLightElevationField\n);",
-      "expected_matches": 1
-    },
-    {
-      "file": "Lancer SitRep Tracker/scripts/elevation-los.js",
-      "operation": "replace",
-      "find": "Hooks.on(\n  \"createWall\",\n  refreshElevationVision\n);",
-      "replace": "Hooks.on(\n  \"updateAmbientLight\",\n  (lightDocument, changes) => {\n    const relevantChange =\n      Object.prototype.hasOwnProperty.call(\n        changes,\n        \"elevation\"\n      ) ||\n      Object.prototype.hasOwnProperty.call(\n        changes,\n        \"x\"\n      ) ||\n      Object.prototype.hasOwnProperty.call(\n        changes,\n        \"y\"\n      ) ||\n      Object.prototype.hasOwnProperty.call(\n        changes,\n        \"walls\"\n      ) ||\n      Object.prototype.hasOwnProperty.call(\n        changes,\n        \"config\"\n      );\n\n    if (relevantChange) {\n      try {\n        lightDocument.object?.initializeLightSource?.();\n      } catch (error) {\n        console.warn(\n          `${MODULE_ID} | Could not directly reinitialize the light source.`,\n          error\n        );\n      }\n\n      refreshElevationVision();\n    }\n  }\n);\n\nHooks.on(\n  \"createAmbientLight\",\n  lightDocument => {\n    try {\n      lightDocument.object?.initializeLightSource?.();\n    } catch {\n      // The placeable may not be fully drawn yet.\n    }\n\n    refreshElevationVision();\n  }\n);\n\nHooks.on(\n  \"deleteAmbientLight\",\n  refreshElevationVision\n);\n\nHooks.on(\n  \"createWall\",\n  refreshElevationVision\n);",
-      "expected_matches": 1
+      "operation": "create",
+      "file": "scripts/movement-tracker.js",
+      "must_not_exist": true,
+      "content": "export function recordTokenMovement() {\n  // Implementation\n}\n"
     }
-  ]
+  ],
+
+  "postconditions": [
+    {
+      "type": "contains",
+      "file": "scripts/lancer-frame-helm.js",
+      "text": "MOVEMENT_TRACKING_ENABLED"
+    },
+    {
+      "type": "file_exists",
+      "file": "scripts/movement-tracker.js"
+    }
+  ],
+
+  "validation": {
+    "structural": true,
+    "scan_dependencies": true,
+    "link_node_modules": true,
+    "timeout_seconds": 600,
+    "commands": [
+      ["npm", "run", "lint"],
+      ["npm", "test"]
+    ]
+  }
 }
