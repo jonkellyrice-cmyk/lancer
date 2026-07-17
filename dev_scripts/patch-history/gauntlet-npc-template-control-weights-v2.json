@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "patch_id": "gauntlet-npc-template-control-weights-v2",
+  "patch_name": "Add Gauntlet NPC template control weights",
+  "patch_file": "C:\\Users\\ricej\\Desktop\\MDV_work\\lancer\\dev_scripts\\filepatcher.json",
+  "applied_at": "2026-07-17T13:43:50.933151+00:00",
+  "repository_root": "C:\\Users\\ricej\\Desktop\\MDV_work\\lancer",
+  "git_head": "17551d0a6e8bb0ca53c7959f2ac8a6bfd1f168a2",
+  "backup_directory": "C:\\Users\\ricej\\Desktop\\MDV_work\\lancer\\dev_scripts\\backups\\2026-07-17T13-43-50.926702Z-gauntlet-npc-template-control-weights-v2",
+  "created": [],
+  "modified": [
+    "lancer sitrep tracker/scripts/lancer-sitrep-tracker.js"
+  ],
+  "removed": [],
+  "files": [
+    {
+      "file": "lancer sitrep tracker/scripts/lancer-sitrep-tracker.js",
+      "original_exists": true,
+      "result_exists": true,
+      "original_sha256": "e86e153440686e83da2fd3cbbf6ad9c56b1919c4435c65a6496b6ec6044da1ab",
+      "result_sha256": "5f9970d1ae721aa9a43566c023609306059804243ca0a35d6741645b60c4a245",
+      "original_bytes": 63339,
+      "result_bytes": 65455
+    }
+  ],
+  "validation_commands": [
+    {
+      "command": [
+        "node",
+        "--check",
+        "lancer sitrep tracker/scripts/lancer-sitrep-tracker.js"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

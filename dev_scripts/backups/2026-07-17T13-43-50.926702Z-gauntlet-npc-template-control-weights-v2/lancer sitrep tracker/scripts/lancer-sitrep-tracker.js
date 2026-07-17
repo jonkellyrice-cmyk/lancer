@@ -90,83 +90,6 @@ const SITREP_TYPES = [
 
 const esc = escapeHTML;
 
-const GAUNTLET_NPC_TEMPLATE_WEIGHTS = Object.freeze({
-  npct_grunt: 0.25,
-  npct_elite: 2,
-  npct_ultra: 4
-});
-
-/**
- * Returns the value of one combatant for Gauntlet control.
- *
- * Lancer stores applied NPC templates as embedded Actor items with
- * type "npc_template" and canonical LIDs such as "npct_elite".
- * PCs, ordinary NPCs, and NPCs with unrelated templates count as 1.
- */
-function gauntletControlWeight(actor) {
-  if (!actor || actor.type !== "npc") {
-    return 1;
-  }
-
-  const templates = [
-    ...(actor.items ?? [])
-  ].filter(
-    item => item?.type === "npc_template"
-  );
-
-  const templateLids = new Set(
-    templates.map(
-      item =>
-        String(item?.system?.lid ?? "")
-          .trim()
-          .toLowerCase()
-    )
-  );
-
-  /*
-   * Template priority protects against malformed NPCs containing
-   * more than one normally exclusive weight-changing template.
-   */
-  if (templateLids.has("npct_ultra")) {
-    return GAUNTLET_NPC_TEMPLATE_WEIGHTS.npct_ultra;
-  }
-
-  if (templateLids.has("npct_elite")) {
-    return GAUNTLET_NPC_TEMPLATE_WEIGHTS.npct_elite;
-  }
-
-  if (templateLids.has("npct_grunt")) {
-    return GAUNTLET_NPC_TEMPLATE_WEIGHTS.npct_grunt;
-  }
-
-  /*
-   * Imported or custom template items may preserve their recognized
-   * name even when their canonical LID is missing.
-   */
-  const templateNames = new Set(
-    templates.map(
-      item =>
-        String(item?.name ?? "")
-          .trim()
-          .toLowerCase()
-    )
-  );
-
-  if (templateNames.has("ultra")) {
-    return GAUNTLET_NPC_TEMPLATE_WEIGHTS.npct_ultra;
-  }
-
-  if (templateNames.has("elite")) {
-    return GAUNTLET_NPC_TEMPLATE_WEIGHTS.npct_elite;
-  }
-
-  if (templateNames.has("grunt")) {
-    return GAUNTLET_NPC_TEMPLATE_WEIGHTS.npct_grunt;
-  }
-
-  return 1;
-}
-
 /* ==========================================================
    Sitrep state composition
    ========================================================== */
@@ -237,23 +160,12 @@ function calculateState(
     const faction = factionOf(token);
     if (faction === "neutral") continue;
 
-    const controlWeight =
-      sitrep.type === "gauntlet"
-        ? gauntletControlWeight(
-            token.actor ?? combatant.actor
-          )
-        : 1;
-
-    standingCombatants.push({
-      token,
-      faction,
-      controlWeight
-    });
+    standingCombatants.push({ token, faction });
 
     if (faction === "friendly") {
-      state.friendlyStanding += controlWeight;
+      state.friendlyStanding += 1;
     } else {
-      state.hostileStanding += controlWeight;
+      state.hostileStanding += 1;
     }
   }
 
@@ -537,9 +449,9 @@ function calculateState(
     if (!tokenInsideRegion(entry.token, region)) continue;
 
     if (entry.faction === "friendly") {
-      state.friendlyInZone += entry.controlWeight;
+      state.friendlyInZone += 1;
     } else {
-      state.hostileInZone += entry.controlWeight;
+      state.hostileInZone += 1;
     }
   }
 
